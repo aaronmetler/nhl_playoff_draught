@@ -4,7 +4,6 @@ import requests
 import random
 import datetime
 import plotly.express as px
-import re
 import extra_streamlit_components as stx
 
 # --- 1. CONFIG & SESSION INITIALIZATION ---
@@ -98,4 +97,55 @@ def clean_and_match(player_str, stats_df):
 
     match = stats_df[(stats_df['lastName'].str.lower().str.contains(name_part)) & 
                      (stats_df['teamAbbrev'] == team_part)]
-    return match.iloc[0].to_dict() if not match.empty
+    
+    # FIX: Added the 'else None' required by Python syntax
+    return match.iloc[0].to_dict() if not match.empty else None
+
+stats, active_today = fetch_live_data()
+
+try:
+    df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv", skiprows=1)
+    gms = [col for col in df_raw.columns if col in USER_DB.values()]
+except:
+    st.error("Missing CSV file: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded.")
+    st.stop()
+
+master_list = []
+for index, row in df_raw.iterrows():
+    round_name = str(row.get('Draft Rounds', ''))
+    if "Round" not in round_name: continue
+    
+    for gm in gms:
+        pick_str = row.get(gm, '')
+        p_data = clean_and_match(pick_str, stats)
+        
+        if p_data is None:
+            p_data = {'lastName': pick_str, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
+            
+        master_list.append({
+            'GM': gm, 'Player': p_data['lastName'], 'Pts': p_data.get('totalPoints', 0), 
+            'G': p_data.get('goals', 0), 'A': p_data.get('assists', 0), 'GP': p_data.get('gamesPlayed', 0), 'Round': round_name
+        })
+
+master_df = pd.DataFrame(master_list)
+
+# --- 4. AVATAR MODAL ---
+@st.dialog("Update Team Avatar")
+def avatar_dialog():
+    st.write("Upload a square image for your team profile.")
+    file = st.file_uploader("Select Image", type=["jpg", "png", "jpeg"])
+    if st.button("Save Changes"):
+        if file:
+            st.session_state.avatar = file.getvalue()
+            st.success("Avatar updated!")
+            st.rerun()
+
+# --- 5. NAVIGATION & UI ---
+st.sidebar.title(f"GM: {st.session_state.gm_name}")
+if st.session_state.avatar:
+    st.sidebar.image(st.session_state.avatar, width=150)
+
+if st.sidebar.button("Log Out"):
+    cookie_manager.delete('user_email_cookie')
+    st.session_state.authenticated = False
+    st.session_state.gm_name = None
