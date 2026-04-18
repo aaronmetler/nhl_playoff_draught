@@ -204,16 +204,18 @@ if nav == "League":
         lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
         lb['Players Remaining'] = lb['Players Remaining'].astype(int)
         
-        # 3. Sort, Calculate Rank, Points Back
+        # 3. Sort, Calculate Rank (as text to left-align), Points Back
         lb = lb.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
-        lb['Rank'] = lb.index + 1
+        # Convert Rank to string format immediately so Streamlit left-aligns it
+        lb['Rank'] = (lb.index + 1).astype(str) 
+        
         max_pts = lb['Pts'].max() if not lb.empty else 0
         lb['Pts Back'] = max_pts - lb['Pts']
         
-        # Add Trophies to Top 2 Teams
+        # Add Trophies to Top 2 Teams (using the new string format for Rank)
         def add_trophy(row):
-            if row['Rank'] == 1: return f"🏆 {row['GM']}"
-            elif row['Rank'] == 2: return f"🥈 {row['GM']}"
+            if row['Rank'] == '1': return f"🏆 {row['GM']}"
+            elif row['Rank'] == '2': return f"🥈 {row['GM']}"
             return row['GM']
             
         lb['Name'] = lb.apply(add_trophy, axis=1)
@@ -232,7 +234,7 @@ if nav == "League":
             hide_index=True, 
             use_container_width=True,
             column_config={
-                "Rank": st.column_config.NumberColumn("Rank", width="small"),
+                "Rank": st.column_config.TextColumn("Rank", width="small"),
                 "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
             }
         )
