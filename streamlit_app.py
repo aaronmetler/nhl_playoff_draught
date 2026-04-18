@@ -288,4 +288,126 @@ for index, row in df_raw.iterrows():
             'Player': f"[{p_name}]({player_url})", 
             'Team': f"[{t_abbrev}]({t_url})" if t_abbrev else "",
             'Team_Raw': t_abbrev,
-            'Position': p_data.get('positionCode
+            'Position': p_data.get('positionCode', ''),
+            'Points': p_data.get('totalPoints', 0), 
+            'G': p_data.get('goals', 0), 
+            'A': p_data.get('assists', 0), 
+            'GP': p_data.get('gamesPlayed', 0), 
+            'Round': round_num
+        })
+        
+master_df = pd.DataFrame(master_list)
+
+if not master_df.empty:
+    master_df['P/PG'] = master_df.apply(lambda r: f"{r['Points'] / r['GP']:.2f}" if r['GP'] > 0 else "0.00", axis=1)
+    master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
+
+# --- APPLY DISPLAY NAME GLOBALLY ---
+if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
+    master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
+    display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
+else:
+    display_gms = gms
+
+# --- AVATAR CONVERTER ---
+def get_avatar_uri(gm_check_name):
+    if gm_check_name == st.session_state.display_name and st.session_state.avatar:
+        b64 = base64.b64encode(st.session_state.avatar).decode()
+        return f"data:image/png;base64,{b64}"
+    default_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a0aec0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>'
+    b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
+    return f"data:image/svg+xml;base64,{b64_svg}"
+
+# --- 6. UI VIEWS ---
+LEAFS_ROASTS = [
+    "Toronto Maple Leafs Update: Currently scheduling tee times for May.",
+    "Toronto Maple Leafs Update: Planning the Stanley Cup parade... for the Marlies.",
+    "Toronto Maple Leafs Update: Local golf courses report surge in tee time bookings from Scotiabank Arena.",
+    "Toronto Maple Leafs Update: 1967 was a great year. Too bad it's 2026."
+]
+
+if nav == "League":
+    # Fading Roast Box
+    leafs_quote = LEAFS_ROASTS[datetime.datetime.now().day % len(LEAFS_ROASTS)]
+    worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
+    st.markdown(f"""
+        <div class="roast-container">
+            <div class="quote-1">🍁 <b>{leafs_quote}</b></div>
+            <div class="quote-2">🚨 <b>{worst_gm_quote}</b></div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if not master_df.empty:
+        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
+        
+        active_mask = ~master_df['Team_Raw'].isin(ELIMINATED_TEAMS)
+        active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
+        lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
+        lb['Players Remaining'] = lb['Players Remaining'].astype(int)
+        
+        lb = lb.sort_values(by=['Points', 'G'], ascending=False).reset_index(drop=True)
+        lb['Rank'] = (lb.index + 1).astype(str) 
+        
+        max_pts = lb['Points'].max() if not lb.empty else 0
+        lb['Pts Back'] = max_pts - lb['Points']
+        
+        def add_trophy(row):
+            if row['Rank'] == '1': return f"🏆 {row['GM']}"
+            elif row['Rank'] == '2': return f"🥈 {row['GM']}"
+            return row['GM']
+            
+        lb['Name'] = lb.apply(add_trophy, axis=1)
+        
+        lb['Pts Yesterday'] = 0  
+        lb[''] = lb['GM'].apply(get_avatar_uri) 
+        
+        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
+        
+        st.dataframe(
+            lb_final, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "Rank": st.column_config.TextColumn("Rank", width="small"),
+                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
+            }
+        )
+
+else:
+    default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
+    selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
+    
+    # Static GM-Specific Roast Box
+    my_team_df = master_df[master_df['GM'] == selected_gm] if not master_df.empty else pd.DataFrame()
+    gm_specific_roast = get_team_roast(selected_gm, my_team_df, DAILY_HEADLINE)
+    st.markdown(f"""
+        <div class="roast-container" style="animation: none;">
+            <div style="color: #0068c9; font-size: 1rem;">🔥 <b>{gm_specific_roast}</b></div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px;'>
+            ➤ <b>Bold</b> indicates playing today<br>
+            ➤ <i>Red Strikethrough</i> indicates eliminated
+        </p>
+    """, unsafe_allow_html=True)
+    
+    if not master_df.empty:
+        my_team = master_df[master_df['GM'] == selected_gm].copy()
+        
+        def style_eliminated(row):
+            if row['Team_Raw'] in ELIMINATED_TEAMS: 
+                return ['background-color: #e6f0fa; color: #0068c9; text-decoration: line-through;'] * len(row)
+            return [''] * len(row)
+            
+        styled_team = my_team[['Round', 'Player', 'Team', 'Position', 'GP', 'Points', 'G', 'A', 'P/PG', 'Rank by Round', 'Team_Raw']].style.apply(style_eliminated, axis=1)
+        
+        st.dataframe(
+            styled_team, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "Team_Raw": None  # Hides the raw column used for math
+            }
+        )
