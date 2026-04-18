@@ -12,10 +12,12 @@ st.set_page_config(layout="wide", page_title="Metler 2026 Playoff Tracker", page
 # Initialize Cookie Manager directly
 cookie_manager = stx.CookieManager()
 
-# Ensure session state exists (Instant state tracking)
+# Ensure session state variables exist
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
+if 'gm_name' not in st.session_state:
     st.session_state.gm_name = None
+if 'avatar' not in st.session_state:
     st.session_state.avatar = None
 
 # --- 2. AUTHENTICATION LOGIC ---
@@ -33,40 +35,65 @@ USER_DB = {
 }
 SHARED_PWD = "playoffs2026"
 
-def check_authentication():
-    # 1. If already authenticated in this active session, proceed instantly.
+def is_authenticated():
+    # Instant session check
     if st.session_state.authenticated:
         return True
-        
-    # 2. If not, check if a persistent cookie exists from a previous visit.
+    # Persistent cookie check
     saved_email = cookie_manager.get('user_email_cookie')
     if saved_email and saved_email in USER_DB:
         st.session_state.authenticated = True
         st.session_state.gm_name = USER_DB[saved_email]
         return True
-        
     return False
 
-# Show login form if neither session nor cookie is valid
-if not check_authentication():
-    st.title("🏒 Playoff Pool Login")
-    with st.form("login_form"):
-        email = st.text_input("Email").lower().strip()
-        pwd = st.text_input("Password", type="password")
-        if st.form_submit_button("Sign In"):
-            if email in USER_DB and pwd == SHARED_PWD:
-                # Set cookie to remember user for 30 days
-                cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
-                # Update instant session state
-                st.session_state.authenticated = True
-                st.session_state.gm_name = USER_DB[email]
-                # Rerun to bypass this form
-                st.rerun()
-            else:
-                st.error("Invalid credentials.")
-    st.stop() # Halts app here until logged in
+# --- LOGIN SCREEN ---
+if not is_authenticated():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.title("🏒 Playoff Pool Login")
+        with st.form("login_form"):
+            email = st.text_input("Email").lower().strip()
+            pwd = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Sign In")
+            
+            if submit:
+                if email in USER_DB and pwd == SHARED_PWD:
+                    cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
+                    st.session_state.authenticated = True
+                    st.session_state.gm_name = USER_DB[email]
+                    st.rerun() # Force a refresh to load the main app
+                else:
+                    st.error("Invalid credentials.")
+    st.stop() # Prevent the rest of the app from loading if not logged in
 
-# --- 3. DATA LOADING & NORMALIZATION ---
+# ==========================================
+# --- 3. MAIN APP (ONLY VISIBLE IF LOGGED IN) ---
+# ==========================================
+
+# --- TOP RIGHT USER PROFILE ---
+# Create 3 columns. The first takes up most of the space to push the others to the right.
+head_c1, head_c2, head_c3 = st.columns([8, 1.5, 1])
+
+with head_c2:
+    if st.session_state.avatar:
+        st.image(st.session_state.avatar, width=40)
+    else:
+        st.markdown("👤")
+    st.markdown(f"**{st.session_state.gm_name}**")
+
+with head_c3:
+    st.write("") # Spacer
+    if st.button("Log Out"):
+        cookie_manager.delete('user_email_cookie')
+        st.session_state.authenticated = False
+        st.session_state.gm_name = None
+        st.session_state.avatar = None
+        st.rerun()
+
+st.divider() # Draw a line under the header
+
+# --- 4. DATA LOADING & NORMALIZATION ---
 @st.cache_data(ttl=3600)
 def fetch_live_data():
     stats_url = "https://api-web.nhle.com/v1/skater-stats-now"
@@ -98,7 +125,6 @@ def clean_and_match(player_str, stats_df):
     match = stats_df[(stats_df['lastName'].str.lower().str.contains(name_part)) & 
                      (stats_df['teamAbbrev'] == team_part)]
     
-    # FIX: Added the 'else None' required by Python syntax
     return match.iloc[0].to_dict() if not match.empty else None
 
 stats, active_today = fetch_live_data()
@@ -107,7 +133,7 @@ try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv", skiprows=1)
     gms = [col for col in df_raw.columns if col in USER_DB.values()]
 except:
-    st.error("Missing CSV file: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded.")
+    st.error("Missing or invalid CSV file: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded to GitHub.")
     st.stop()
 
 master_list = []
@@ -129,7 +155,7 @@ for index, row in df_raw.iterrows():
 
 master_df = pd.DataFrame(master_list)
 
-# --- 4. AVATAR MODAL ---
+# --- 5. AVATAR MODAL ---
 @st.dialog("Update Team Avatar")
 def avatar_dialog():
     st.write("Upload a square image for your team profile.")
@@ -140,12 +166,20 @@ def avatar_dialog():
             st.success("Avatar updated!")
             st.rerun()
 
-# --- 5. NAVIGATION & UI ---
-st.sidebar.title(f"GM: {st.session_state.gm_name}")
-if st.session_state.avatar:
-    st.sidebar.image(st.session_state.avatar, width=150)
+# --- 6. NAVIGATION & UI VIEWS ---
+nav = st.radio("Navigation", ["League", "My Team"], horizontal=True)
 
-if st.sidebar.button("Log Out"):
-    cookie_manager.delete('user_email_cookie')
-    st.session_state.authenticated = False
-    st.session_state.gm_name = None
+if nav == "League":
+    st.title("🏆 League Standings")
+    st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
+    
+    if not master_df.empty:
+        leaderboard = master_df.groupby('GM').agg({'Pts': 'sum', 'G': 'sum'}).reset_index()
+        leaderboard = leaderboard.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        leaderboard.index += 1
+        st.dataframe(leaderboard, use_container_width=True)
+
+else:
+    st.title("🏒 My Team")
+    
+    # Avatar Button is only on the Team page now
