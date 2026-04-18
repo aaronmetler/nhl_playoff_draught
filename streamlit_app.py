@@ -75,14 +75,13 @@ if not is_authenticated():
 # ==========================================
 
 # --- TOP HEADER: App Title (Left) & User Profile (Right) ---
-t_title, t_text, t_img, t_menu = st.columns([6.5, 2.5, 0.5, 0.5])
+t_title, t_text, t_img, t_menu = st.columns([5.5, 3.5, 0.5, 0.5])
 
 with t_title:
-    # Adds the App Name to the top left
-    st.markdown("<h3 style='margin-top: 5px; margin-bottom: 0px;'>🏆 Metler Playoff Pool</h3>", unsafe_allow_html=True)
+    # Huge App Name, no trophy, pulled up slightly to align
+    st.markdown("<h1 style='margin-top: -15px; margin-bottom: 0px; font-size: 3.2rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
 
 with t_text:
-    # Adding margin to vertically align the text with the image/button
     st.markdown(f"<div style='text-align: right; margin-top: 10px; font-size: 18px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 with t_img:
@@ -132,7 +131,7 @@ except AttributeError:
 if nav is None:
     nav = "League"
 
-st.write("") # Tiny spacer
+st.write("") 
 
 # --- 5. DATA LOADING & NORMALIZATION ---
 @st.cache_data(ttl=3600)
@@ -201,7 +200,6 @@ master_df = pd.DataFrame(master_list)
 
 # --- 6. UI VIEWS ---
 if nav == "League":
-    # Removed the large League title since the main App Title covers it
     st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
     
     if not master_df.empty:
@@ -211,9 +209,6 @@ if nav == "League":
         st.dataframe(leaderboard, use_container_width=True)
 
 else:
-    # Removed the large "My Team" title to keep the UI clean
-    
-    # Dropdown defaults to logged-in user
     default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
     selected_gm = st.selectbox("View Another Team", gms, index=default_idx)
     
