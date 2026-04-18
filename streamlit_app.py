@@ -1,96 +1,158 @@
 import streamlit as st
 import pandas as pd
 import requests
-import datetime
 import random
+import datetime
+import plotly.express as px
 import re
 
-# --- CONFIG & STYLING ---
-st.set_page_config(layout="wide", page_title="Metler Playoff Pool")
-st.markdown("""<style>.eliminated { text-decoration: line-through; background-color: #ffcccc; opacity: 0.6; }</style>""", unsafe_allow_html=True)
+# --- 1. PAGE CONFIGURATION ---
+st.set_page_config(layout="wide", page_title="Metler 2026 Playoff Tracker", page_icon="🏒")
 
-# --- HUMOR ENGINES ---
-def get_leafs_joke():
-    jokes = [
-        "The Leafs have officially won as many 2nd round games this year as your grandmother.",
-        "Scientists found a new element: Leafium. It's stable until April, then it completely collapses.",
-        "Why does the Maple Leafs' goalie use a pager? Because he can't handle a 'ring'."
+# --- 2. SARCASM & JOKE ENGINES ---
+def get_daily_joke(category):
+    seed = int(datetime.datetime.now().strftime("%Y%m%d"))
+    random.seed(seed)
+    leafs = [
+        "The Leafs have officially spent more on playoff beard oil than they have on 2nd round travel expenses.",
+        "Breaking: Toronto pre-emptively cancels the 2026 parade to save on stationery costs.",
+        "The Leafs' playoff run is like a TikTok video: short, loud, and ends before you can actually enjoy it.",
+        "Science update: The shortest unit of time is no longer the nanosecond; it's a Leafs lead in Game 7."
     ]
-    return random.choice(jokes)
-
-def get_team_insult(points):
-    insults = [
-        f"With {points} points, this team is moving slower than a Zamboni on a coffee break.",
-        "I've seen more offensive pressure from a peewee team with one skate on.",
-        "This roster is so deep in the basement they're finding buried treasure."
+    team = [
+        "Your roster is currently providing the same offensive threat as a wet paper towel.",
+        "I've seen more 'drive' in a retirement home parking lot than in your Round 3 picks.",
+        "Congratulations! Your team is currently the #1 reason why 'Total Points' isn't a high-score contest.",
+        "If your GMs were scouts, you'd all be looking for jobs in the KHL by Monday."
     ]
-    return random.choice(insults)
+    return random.choice(leafs if category == "leafs" else team)
 
-# --- DATA FETCHING (NHL API) ---
+# --- 3. DATA FETCHING (NHL API) ---
 @st.cache_data(ttl=3600)
-def get_playoff_stats():
-    # Official NHL API for current playoff skaters
-    url = "https://api-web.nhle.com/v1/skater-stats-now"
-    params = {"season": "20252026", "gameTypeId": 3} # 3 is Playoff code
-    data = requests.get(url, params=params).json()['data']
-    df = pd.DataFrame(data)
-    df['totalPoints'] = df['goals'] + df['assists']
-    return df
-
-def get_active_teams():
-    # Checks who plays today
-    url = "https://api-web.nhle.com/v1/score/now"
-    games = requests.get(url).json().get('games', [])
-    active = []
-    for g in games:
-        active.append(g['homeTeam']['abbrev'])
-        active.append(g['awayTeam']['abbrev'])
-    return active
-
-# --- NORMALIZATION LOGIC ---
-def parse_pick(pick_str, stats_df):
-    # Cleans "McDavid - EDM" or "L. Carlsson - ANA"
+def fetch_live_data():
+    # 2025-2026 Playoff Skater Stats (gameTypeId=3)
+    stats_url = "https://api-web.nhle.com/v1/skater-stats-now"
+    params = {"season": "20252026", "gameTypeId": 3}
     try:
-        clean_name = re.split('-|\s', pick_str.strip())[0].lower()
-        team_abbr = pick_str.split('-')[-1].strip().upper().replace("TB", "TBL").replace("VEGAS", "VGK")
-        
-        # Match against API data
-        match = stats_df[(stats_df['lastName'].str.lower().str.contains(clean_name)) & 
-                         (stats_df['teamAbbrev'] == team_abbr)]
-        return match.iloc[0] if not match.empty else None
+        resp = requests.get(stats_url, params=params)
+        if resp.status_code == 200:
+            stats_data = resp.json().get('data', [])
+            stats_df = pd.DataFrame(stats_data)
+            if not stats_df.empty:
+                stats_df['totalPoints'] = stats_df['goals'] + stats_df['assists']
+        else:
+            stats_df = pd.DataFrame()
     except:
-        return None
-
-# --- APP UI ---
-stats_df, active_today = get_playoff_stats(), get_active_teams()
-
-# Sidebar: Manage Team Identity
-st.sidebar.header("Team Management")
-custom_name = st.sidebar.text_input("Change Team Name", "My Team")
-custom_icon = st.sidebar.selectbox("Choose Icon", ["🏒", "🏆", "🔥", "🧊"])
-
-view = st.sidebar.radio("Navigation", ["League View", "Team View"])
-
-# --- VIEW: LEAGUE ---
-if view == "League View":
-    st.title(f"{custom_icon} The Leaderboard")
-    st.info(f"**Daily Leafs Fact:** {get_leafs_joke()}")
+        stats_df = pd.DataFrame()
     
-    # Logic to aggregate GM scores from your CSV (mockup here)
-    # leaderboard = process_csv_scores() 
-    st.write("Aggregated league standings sorted by Total Points (Tie-break: Goals).")
+    # Live Scores (To bold players active today)
+    scores_url = "https://api-web.nhle.com/v1/score/now"
+    try:
+        scores = requests.get(scores_url).json()
+        active_teams = [g['homeTeam']['abbrev'] for g in scores.get('games', [])] + \
+                       [g['awayTeam']['abbrev'] for g in scores.get('games', [])]
+    except:
+        active_teams = []
+        
+    return stats_df, active_teams
 
-# --- VIEW: TEAM ---
-else:
-    st.title(f"{custom_icon} {custom_name}")
-    st.write(f"*{get_team_insult(10)}*")
-    st.caption("*Italicized & Bold names are playing today (ET).*")
+# --- 4. NORMALIZATION ENGINE ---
+def clean_and_match(player_str, stats_df):
+    if pd.isna(player_str) or str(player_str).strip() == '': return None
+    if stats_df.empty: return None
+
+    # Handle formats like "McDavid - EDM", "L. Carlsson - ANA", or "Raddysh-Tb"
+    player_str = str(player_str).replace('-', ' ')
+    parts = player_str.split()
     
-    # Metric Row
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Playing Today", "4")
-    col2.metric("Players Remaining", "12/14")
-    col3.metric("League Rank", "#2")
+    # Team is usually the last part
+    team_part = parts[-1].upper()
+    team_map = {'TB': 'TBL', 'MON': 'MTL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'WAS': 'WSH'}
+    team_part = team_map.get(team_part, team_part)
+    
+    # Name is the rest
+    name_part = parts[0].lower().replace('ü', 'u')
+    if "." in name_part: # Handles "L. Carlsson" -> "Carlsson"
+        name_part = parts[1].lower() if len(parts) > 2 else name_part
 
-    # Table with all required columns
-    # st.dataframe(processed_team_df) # Including Rank within Round and doc links
+    # Filter API data
+    match = stats_df[(stats_df['lastName'].str.lower().str.contains(name_part)) & 
+                     (stats_df['teamAbbrev'] == team_part)]
+    
+    return match.iloc[0] if not match.empty else None
+
+# --- 5. APP EXECUTION ---
+stats, active_today = fetch_live_data()
+
+# Load Draft Data (skiprows=1 fixes the header offset in your CSV)
+try:
+    df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv", skiprows=1)
+    gms = [col for col in df_raw.columns if col not in ['Draft Rounds', 'Rules'] and not str(col).startswith('Unnamed')]
+except:
+    st.error("Missing CSV: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded to your GitHub.")
+    st.stop()
+
+# Build Master Data
+master_list = []
+for index, row in df_raw.iterrows():
+    round_label = str(row.get('Draft Rounds', ''))
+    if "Round" not in round_label: continue
+    round_num = int(re.search(r'\d+', round_label).group())
+    
+    for gm in gms:
+        pick_str = row[gm]
+        matched = clean_and_match(pick_str, stats)
+        if matched is not None:
+            master_list.append({
+                'GM': gm, 'Round': round_num, 'Player': matched['lastName'], 'Team': matched['teamAbbrev'],
+                'GP': matched['gamesPlayed'], 'G': matched['goals'], 'A': matched['assists'],
+                'Pts': matched['totalPoints'], 'ID': matched['playerId']
+            })
+
+master_df = pd.DataFrame(master_list)
+if not master_df.empty:
+    master_df['Rnd Rank'] = master_df.groupby('Round')['Pts'].rank(ascending=False, method='min').astype(int)
+
+# --- 6. NAVIGATION ---
+tab_league, tab_team = st.tabs(["🏆 League View", "🏒 Team View"])
+
+with tab_league:
+    st.title("The Leaderboard")
+    st.info(f"**Leafs Daily Report:** {get_daily_joke('leafs')}")
+    
+    if not master_df.empty:
+        leaders = master_df.groupby('GM').agg({'Pts': 'sum', 'G': 'sum', 'Player': 'count'}).reset_index()
+        leaders = leaders.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        leaders['Rank'] = leaders.index + 1
+        st.dataframe(leaders[['Rank', 'GM', 'Pts', 'G', 'Player']].rename(columns={'Player': 'Active'}), use_container_width=True)
+    else:
+        st.warning("Stats aren't live yet. Check back once the first puck drops!")
+
+with tab_team:
+    selected_gm = st.selectbox("Select GM", gms)
+    st.subheader(f"Team: {selected_gm}")
+    st.warning(f"**Management Critique:** {get_daily_joke('team')}")
+    st.caption("*Note: **Bolded** names indicate a game today. Click 'Doc' for News.*")
+
+    if not master_df.empty:
+        my_team = master_df[master_df['GM'] == selected_gm].copy()
+        
+        # Format the table with Links
+        def format_row(r):
+            name = f"**{r['Player']}**" if r['Team'] in active_today else r['Player']
+            news_url = f"https://www.nhl.com/player/{r['ID']}?stats=gamelog"
+            bio_url = f"https://www.nhl.com/player/{r['ID']}"
+            return pd.Series([
+                f'<a href="{news_url}">📄</a>',
+                f'<a href="{bio_url}">{name}</a>',
+                r['Team'], r['Round'], r['Rnd Rank'], r['GP'], r['G'], r['A'], r['Pts']
+            ])
+
+        team_display = my_team.apply(format_row, axis=1)
+        team_display.columns = ['News', 'Player', 'Team', 'Rnd', 'Rnd Rank', 'GP', 'G', 'A', 'Total Pts']
+        st.write(team_display.to_html(escape=False, index=False), unsafe_allow_html=True)
+        
+        # Performance Graph
+        avg = master_df.groupby('GM')['Pts'].sum().mean()
+        fig = px.bar(x=["Your Team", "League Avg"], y=[my_team['Pts'].sum(), avg], title="Performance vs. League Average")
+        st.plotly_chart(fig)
