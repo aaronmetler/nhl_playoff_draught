@@ -10,7 +10,7 @@ import os
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: EXTREME PADDING REDUCTION, ANIMATIONS & KPI CENTERING ---
+# --- CUSTOM CSS: EXTREME PADDING REDUCTION & ANIMATIONS ---
 st.markdown("""
     <style>
         .block-container {
@@ -21,8 +21,6 @@ st.markdown("""
             margin-top: 0.5em;
             margin-bottom: 0.5em;
         }
-        
-        /* Roast Box CSS */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -50,7 +48,6 @@ st.markdown("""
             100% { opacity: 1; visibility: visible; }
         }
         
-        /* Custom Team HTML Table CSS */
         .team-table {
             width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;
         }
@@ -417,6 +414,13 @@ def get_avatar_uri(gm_check_name):
     b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
     return f"data:image/svg+xml;base64,{b64_svg}"
 
+# --- PREPARE CUSTOM ACTIVE ICON ---
+active_b64 = ""
+if os.path.exists("active.png"):
+    with open("active.png", "rb") as f:
+        active_b64 = base64.b64encode(f.read()).decode()
+active_img_html = f"<img src='data:image/png;base64,{active_b64}' width='16' title='Active Today' style='vertical-align: middle; margin-left: 4px;'>" if active_b64 else "<span title='Active Today' style='margin-left: 4px;'>🏒</span>"
+
 # --- 6. UI VIEWS ---
 LEAFS_ROASTS = [
     "Toronto Maple Leafs Update: Currently scheduling tee times for May.",
@@ -459,7 +463,6 @@ if nav == "League":
         lb['Pts Yesterday'] = 0  
         lb[''] = lb['GM'].apply(get_avatar_uri) 
         
-        # Rank column is now correctly ordered before the Avatar column
         lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
         st.dataframe(
@@ -501,10 +504,10 @@ else:
         alive_count = my_team[~my_team['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team.empty else 0
         st.metric("Players Remaining", alive_count)
 
-    st.markdown("""
+    st.markdown(f"""
         <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px; line-height: 1.6;'>
-            ➤ <b>Bold</b> indicates playing today<br>
-            ➤ <span style="color: #0068c9; text-decoration: line-through;">Blue Strikethrough</span> indicates eliminated
+            ➤ {active_img_html} indicates playing today<br>
+            ➤ <span style="text-decoration: line-through;">Strikethrough</span> indicates eliminated
         </p>
     """, unsafe_allow_html=True)
     
@@ -519,25 +522,31 @@ else:
             my_team['Rank by Round'] = "-"
         
         html = "<table class='team-table'>"
-        html += "<tr><th>Round</th><th>Player</th><th style='text-align:center;'>News</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
+        html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
         
         for _, r in my_team.iterrows():
             is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
             is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
             
-            bg = "rgba(0, 104, 201, 0.08)" if is_elim else "transparent"
-            color = "#0068c9" if is_elim else "inherit"
+            bg = "transparent" # No background color for eliminated players
+            color = "inherit"  # No specific text color
             text_decor = "line-through" if is_elim else "none"
-            weight = "bold" if is_playing else "normal"
             
-            p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Player_Name']}</a>"
-            t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Team_Raw']}</a>"
+            p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Player_Name']}</a>"
             
-            # Google News external link constrained to the last 2 days
-            news_link = f"<a href='https://news.google.com/search?q={r['Player_Name'].replace(' ', '+')}+NHL+when:2d' target='_blank' title='Recent News (48h)' style='text-decoration: none;'>📄</a>"
+            # News Link (Document Icon)
+            news_link = f"<a href='https://news.google.com/search?q={r['Player_Name'].replace(' ', '+')}+NHL+when:2d' target='_blank' title='Player News' style='text-decoration: none;'>📄</a>"
             
-            html += f"<tr style='background-color: {bg}; color: {color};'>"
-            html += f"<td>{r['Round']}</td><td>{p_link}</td><td style='text-align:center;'>{news_link}</td><td>{t_link}</td><td>{r['Position']}</td>"
+            # Active Icon
+            active_indicator = f" {active_img_html}" if is_playing else ""
+            
+            # Combine Player Link + News + Active Indicator
+            player_cell = f"{p_link} {news_link}{active_indicator}"
+            
+            t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
+            
+            html += f"<tr style='background-color: {bg}; color: {color}; text-decoration: {text_decor};'>"
+            html += f"<td>{r['Round']}</td><td>{player_cell}</td><td>{t_link}</td><td>{r['Position']}</td>"
             html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
             html += f"<td>{r['P/PG']}</td><td>{r['Rank by Round']}</td></tr>"
             
