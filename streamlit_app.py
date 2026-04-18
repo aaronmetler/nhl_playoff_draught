@@ -10,7 +10,7 @@ import os
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: EXTREME PADDING REDUCTION & ANIMATIONS ---
+# --- CUSTOM CSS: EXTREME PADDING REDUCTION, ANIMATIONS & KPI CENTERING ---
 st.markdown("""
     <style>
         .block-container {
@@ -21,6 +21,8 @@ st.markdown("""
             margin-top: 0.5em;
             margin-bottom: 0.5em;
         }
+        
+        /* Roast Box CSS */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -48,6 +50,7 @@ st.markdown("""
             100% { opacity: 1; visibility: visible; }
         }
         
+        /* Custom Team HTML Table CSS */
         .team-table {
             width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;
         }
@@ -60,8 +63,21 @@ st.markdown("""
         .team-table a { text-decoration: none; }
         .team-table a:hover { text-decoration: underline; }
         
-        /* Metric Styling */
-        div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; }
+        /* KPI Centering */
+        [data-testid="stMetric"] {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        [data-testid="stMetricValue"] { 
+            font-size: 1.8rem; 
+            color: #0068c9; 
+            text-align: center; 
+        }
+        [data-testid="stMetricLabel"] { 
+            text-align: center; 
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -183,7 +199,6 @@ if nav is None: nav = "League"
 # --- 5. DATA FETCHING & LOGIC ---
 @st.cache_data(ttl=3600*24)
 def get_roster_dictionary():
-    # Builds a master dictionary of all players, IDs, and positions
     roster_dict = {}
     for t in TEAM_URLS.keys():
         try:
@@ -336,14 +351,12 @@ for index, row in df_raw.iterrows():
         pick_str = str(row.get(gm, '')).strip()
         if not pick_str or pd.isna(pick_str): continue
         
-        # Base Match Parsing
         clean_p = pick_str.replace('-', ' ').lower()
         parts = clean_p.split()
         t_part = parts[-1].upper()
         n_part = parts[0].replace('ü', 'u')
         if "." in n_part: n_part = parts[1] if len(parts) > 1 else n_part
         
-        # Fetch from Roster Dictionary First for ID and Position
         p_id = None
         pos = ''
         p_name = pick_str.split('-')[0].strip()
@@ -354,7 +367,6 @@ for index, row in df_raw.iterrows():
                 pos = info['pos']
                 break
                 
-        # Merge with Playoff Stats if available
         p_pts, p_g, p_a, p_gp = 0, 0, 0, 0
         if not stats.empty:
             match = stats[(stats['lastName'].str.lower().str.contains(n_part)) & (stats['teamAbbrev'] == t_part)]
@@ -367,7 +379,6 @@ for index, row in df_raw.iterrows():
                 p_id = p_id or s_data.get('playerId')
                 p_name = f"{s_data.get('firstName', '')} {s_data.get('lastName', p_name)}".strip()
         
-        # Official NHL vanity routing URLs
         player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
         t_url = f"https://www.nhl.com/{TEAM_URLS.get(t_part, 'standings')}" if t_part else "https://www.nhl.com"
         
@@ -392,14 +403,12 @@ if not master_df.empty:
     master_df['P/PG'] = master_df.apply(lambda r: f"{r['Points'] / r['GP']:.2f}" if r['GP'] > 0 else "0.00", axis=1)
     master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
 
-# --- APPLY DISPLAY NAME GLOBALLY ---
 if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
     display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
 else:
     display_gms = gms
 
-# --- AVATAR CONVERTER ---
 def get_avatar_uri(gm_check_name):
     if gm_check_name == st.session_state.display_name and st.session_state.avatar:
         b64 = base64.b64encode(st.session_state.avatar).decode()
@@ -417,7 +426,6 @@ LEAFS_ROASTS = [
 ]
 
 if nav == "League":
-    # Fading Roast Box
     leafs_quote = LEAFS_ROASTS[datetime.datetime.now().day % len(LEAFS_ROASTS)]
     worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
     st.markdown(f"""
@@ -451,7 +459,7 @@ if nav == "League":
         lb['Pts Yesterday'] = 0  
         lb[''] = lb['GM'].apply(get_avatar_uri) 
         
-        # Swapped Order: Rank then Avatar
+        # Rank column is now correctly ordered before the Avatar column
         lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
         st.dataframe(
@@ -465,7 +473,6 @@ if nav == "League":
         )
 
 else:
-    # 1. ROAST BOX ABOVE EVERYTHING
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
     selected_gm_temp = st.session_state.get('selected_gm_val', display_gms[default_idx])
     my_team_df_preview = master_df[master_df['GM'] == selected_gm_temp] if not master_df.empty else pd.DataFrame()
@@ -477,7 +484,6 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. DROPDOWNS & KPIs
     c1, c2, c3, c4 = st.columns([2.5, 2.5, 1.5, 1.5])
     
     with c1:
@@ -490,12 +496,11 @@ else:
     
     with c3:
         active_count = my_team[my_team['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_team['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team.empty else 0
-        st.metric("Active Today", active_count)
+        st.metric("Players Active Today", active_count)
     with c4:
         alive_count = my_team[~my_team['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team.empty else 0
-        st.metric("Players Left", alive_count)
+        st.metric("Players Remaining", alive_count)
 
-    # 3. LEGEND & TABLE
     st.markdown("""
         <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px; line-height: 1.6;'>
             ➤ <b>Bold</b> indicates playing today<br>
@@ -504,19 +509,17 @@ else:
     """, unsafe_allow_html=True)
     
     if not my_team.empty:
-        # Process Historical Stats if requested
         days = time_options[stat_filter]
         if days > 0:
             hist_data = get_historical_points(my_team['Player_Id'].tolist(), days)
             my_team['Points'] = my_team['Player_Id'].map(hist_data).fillna(0).astype(int)
-            my_team['G'] = "-" # Hiding goals/assists as we only fetch total points for speed
+            my_team['G'] = "-" 
             my_team['A'] = "-"
             my_team['P/PG'] = "-"
             my_team['Rank by Round'] = "-"
         
-        # Build HTML Table
         html = "<table class='team-table'>"
-        html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
+        html += "<tr><th>Round</th><th>Player</th><th style='text-align:center;'>News</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
         
         for _, r in my_team.iterrows():
             is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
@@ -530,8 +533,11 @@ else:
             p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Player_Name']}</a>"
             t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Team_Raw']}</a>"
             
+            # Google News external link constrained to the last 2 days
+            news_link = f"<a href='https://news.google.com/search?q={r['Player_Name'].replace(' ', '+')}+NHL+when:2d' target='_blank' title='Recent News (48h)' style='text-decoration: none;'>📄</a>"
+            
             html += f"<tr style='background-color: {bg}; color: {color};'>"
-            html += f"<td>{r['Round']}</td><td>{p_link}</td><td>{t_link}</td><td>{r['Position']}</td>"
+            html += f"<td>{r['Round']}</td><td>{p_link}</td><td style='text-align:center;'>{news_link}</td><td>{t_link}</td><td>{r['Position']}</td>"
             html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
             html += f"<td>{r['P/PG']}</td><td>{r['Rank by Round']}</td></tr>"
             
