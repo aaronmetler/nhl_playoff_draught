@@ -10,14 +10,12 @@ import os
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
 # --- CUSTOM CSS: EXTREME PADDING REDUCTION ---
-# This CSS pulls the entire app up to the very top edge of the browser
 st.markdown("""
     <style>
         .block-container {
             padding-top: 0.5rem;
             padding-bottom: 0rem;
         }
-        /* Reduce space below the header */
         hr {
             margin-top: 0.5em;
             margin-bottom: 0.5em;
@@ -73,17 +71,14 @@ if not is_authenticated():
                     st.error("Invalid credentials.")
     st.stop()
 
-# --- 3. MAIN APP HEADER (ULTRA COMPACT WITH LOGO) ---
-# Added a new tiny column (t_logo) at the far left for your uploaded image
+# --- 3. MAIN APP HEADER ---
 t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
 
 with t_logo:
-    # Checks if you uploaded logo.png to GitHub, and displays it if you did
     if os.path.exists("logo.png"):
         st.image("logo.png", width=55)
         
 with t_title: 
-    # Adjusted margins to align perfectly with the new logo
     st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
     
 with t_text: 
@@ -172,10 +167,10 @@ def clean_and_match(player_str, stats_df):
     n_part = parts[0].replace('ü', 'u')
     if "." in n_part: n_part = parts[1] if len(parts) > 1 else n_part
     if stats_df.empty:
-        return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part}
+        return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': ''}
     match = stats_df[(stats_df['lastName'].str.lower().str.contains(n_part)) & (stats_df['teamAbbrev'] == t_part)]
     if not match.empty: return match.iloc[0].to_dict()
-    return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part}
+    return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': ''}
 
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
@@ -192,16 +187,33 @@ master_list = []
 for index, row in df_raw.iterrows():
     round_name = str(row.get('Draft Rounds', ''))
     if "Round" not in round_name: continue
+    
+    # Strip "Round " text to leave just the number
+    round_num = round_name.replace("Round", "").strip()
+    
     for gm in gms:
         pick_str = row.get(gm, '')
         p_data = clean_and_match(pick_str, stats)
         if p_data is None: continue
         master_list.append({
-            'GM': gm, 'Player': p_data['lastName'], 'Team': p_data.get('teamAbbrev', ''),
-            'Pts': p_data.get('totalPoints', 0), 'G': p_data.get('goals', 0), 
-            'A': p_data.get('assists', 0), 'GP': p_data.get('gamesPlayed', 0), 'Round': round_name
+            'GM': gm, 
+            'Player': p_data['lastName'], 
+            'Team': p_data.get('teamAbbrev', ''),
+            'Position': p_data.get('positionCode', ''),
+            'Points': p_data.get('totalPoints', 0), 
+            'G': p_data.get('goals', 0), 
+            'A': p_data.get('assists', 0), 
+            'GP': p_data.get('gamesPlayed', 0), 
+            'Round': round_num
         })
+        
 master_df = pd.DataFrame(master_list)
+
+# Data Processing: Rank by Round and P/PG
+if not master_df.empty:
+    master_df['P/PG'] = master_df.apply(lambda r: round(r['Points'] / r['GP'], 2) if r['GP'] > 0 else 0.00, axis=1)
+    # Ranks players globally based on their draft round and points
+    master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
 
 # --- APPLY DISPLAY NAME GLOBALLY ---
 if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
@@ -222,18 +234,18 @@ def get_avatar_uri(gm_check_name):
 # --- 6. UI VIEWS ---
 if nav == "League":
     if not master_df.empty:
-        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Pts': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
+        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
         
         active_mask = ~master_df['Team'].isin(ELIMINATED_TEAMS)
         active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
         lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
         lb['Players Remaining'] = lb['Players Remaining'].astype(int)
         
-        lb = lb.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        lb = lb.sort_values(by=['Points', 'G'], ascending=False).reset_index(drop=True)
         lb['Rank'] = (lb.index + 1).astype(str) 
         
-        max_pts = lb['Pts'].max() if not lb.empty else 0
-        lb['Pts Back'] = max_pts - lb['Pts']
+        max_pts = lb['Points'].max() if not lb.empty else 0
+        lb['Pts Back'] = max_pts - lb['Points']
         
         def add_trophy(row):
             if row['Rank'] == '1': return f"🏆 {row['GM']}"
@@ -244,7 +256,6 @@ if nav == "League":
         
         lb['Pts Yesterday'] = 0  
         lb[''] = lb['GM'].apply(get_avatar_uri) 
-        lb = lb.rename(columns={'Pts': 'Points'})
         
         lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
@@ -262,7 +273,6 @@ else:
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
     selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
     
-    # Updated Legend with Arrows and Line Break
     st.markdown("""
         <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px;'>
             ➤ <b>Bold</b> indicates playing today<br>
@@ -278,5 +288,5 @@ else:
                 return ['background-color: #e6f0fa; color: #0068c9; text-decoration: line-through;'] * len(row)
             return [''] * len(row)
             
-        styled_team = my_team[['Round', 'Player', 'Team', 'GP', 'G', 'A', 'Pts']].style.apply(style_eliminated, axis=1)
+        styled_team = my_team[['Round', 'Player', 'Team', 'Position', 'GP', 'Points', 'G', 'A', 'P/PG', 'Rank by Round']].style.apply(style_eliminated, axis=1)
         st.dataframe(styled_team, hide_index=True, use_container_width=True)
