@@ -8,14 +8,16 @@ import extra_streamlit_components as stx
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler 2026 Playoff Tracker", page_icon="🏒")
 
-# Initialize Cookie Manager directly
+# Initialize Cookie Manager
 cookie_manager = stx.CookieManager()
 
-# Ensure session state variables exist
+# Ensure all session state variables exist
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 if 'gm_name' not in st.session_state:
     st.session_state.gm_name = None
+if 'display_name' not in st.session_state:
+    st.session_state.display_name = None
 if 'avatar' not in st.session_state:
     st.session_state.avatar = None
 
@@ -42,6 +44,8 @@ def is_authenticated():
     if saved_email and saved_email in USER_DB:
         st.session_state.authenticated = True
         st.session_state.gm_name = USER_DB[saved_email]
+        if not st.session_state.display_name:
+            st.session_state.display_name = USER_DB[saved_email]
         return True
     return False
 
@@ -60,6 +64,7 @@ if not is_authenticated():
                     cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
                     st.session_state.authenticated = True
                     st.session_state.gm_name = USER_DB[email]
+                    st.session_state.display_name = USER_DB[email] # Set initial display name
                     st.rerun()
                 else:
                     st.error("Invalid credentials.")
@@ -69,26 +74,50 @@ if not is_authenticated():
 # --- 3. MAIN APP (ONLY VISIBLE IF LOGGED IN) ---
 # ==========================================
 
-# --- TOP RIGHT USER PROFILE ---
-spacer, t_name, t_img, t_out = st.columns([7, 1.5, 0.5, 1])
+# --- TOP RIGHT HEADER: Welcome, Avatar & Dropdown Menu ---
+# We use columns to push everything to the top right.
+spacer, t_text, t_img, t_menu = st.columns([6.5, 2.5, 0.5, 0.5])
 
-with t_name:
-    st.write("") # Tiny spacer to push text down to align with image
-    st.markdown(f"<div style='text-align: right'>Welcome, <b>{st.session_state.gm_name}</b></div>", unsafe_allow_html=True)
+with t_text:
+    # Adding slight top padding to vertically align text with the image
+    st.markdown(f"<div style='text-align: right; padding-top: 10px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 with t_img:
     if st.session_state.avatar:
-        st.image(st.session_state.avatar, width=35)
+        st.image(st.session_state.avatar, width=40)
     else:
-        st.markdown("<div style='font-size: 20px;'>👤</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 24px; text-align: left;'>👤</div>", unsafe_allow_html=True)
 
-with t_out:
-    if st.button("Log Out", use_container_width=True):
-        cookie_manager.delete('user_email_cookie')
-        st.session_state.authenticated = False
-        st.session_state.gm_name = None
-        st.session_state.avatar = None
-        st.rerun()
+with t_menu:
+    # st.popover acts as our dropdown menu
+    with st.popover("⚙️"):
+        st.markdown("**Profile Settings**")
+        
+        # Change Name Feature
+        new_name = st.text_input("Display Name", value=st.session_state.display_name)
+        if st.button("Update Name"):
+            st.session_state.display_name = new_name
+            st.rerun()
+            
+        st.divider()
+        
+        # Change Avatar Feature
+        file = st.file_uploader("Update Avatar", type=["jpg", "png", "jpeg"])
+        if st.button("Save Avatar"):
+            if file:
+                st.session_state.avatar = file.getvalue()
+                st.rerun()
+                
+        st.divider()
+        
+        # Logout Feature
+        if st.button("Log Out", use_container_width=True):
+            cookie_manager.delete('user_email_cookie')
+            st.session_state.authenticated = False
+            st.session_state.gm_name = None
+            st.session_state.display_name = None
+            st.session_state.avatar = None
+            st.rerun()
 
 st.divider()
 
@@ -173,15 +202,6 @@ if nav == "League":
 
 else:
     st.title("🏒 My Team")
-    
-    # Safe Avatar Upload Expander (replaces the modal)
-    with st.expander("👤 Add/Change My Avatar"):
-        file = st.file_uploader("Select a square image", type=["jpg", "png", "jpeg"])
-        if st.button("Save Avatar"):
-            if file:
-                st.session_state.avatar = file.getvalue()
-                st.success("Avatar saved!")
-                st.rerun()
     
     # Dropdown defaults to logged-in user
     default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
