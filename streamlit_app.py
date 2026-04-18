@@ -55,10 +55,13 @@ st.markdown("""
             width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-bottom: 2rem;
         }
         .team-table th {
-            border-bottom: 2px solid #ddd; color: #888; text-align: left; padding: 8px;
+            border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 8px;
         }
         .team-table td {
-            border-bottom: 1px solid #eee; padding: 8px;
+            border-bottom: 1px solid #eee; padding: 8px; text-align: center;
+        }
+        .team-table td.text-left, .team-table th.text-left {
+            text-align: left;
         }
         .team-table a { text-decoration: none; }
         .team-table a:hover { text-decoration: underline; }
@@ -205,7 +208,6 @@ def get_roster_dictionary():
             res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current")
             if res.status_code == 200:
                 data = res.json()
-                # Include goalies this time!
                 for group in ['forwards', 'defensemen', 'goalies']:
                     for p in data.get(group, []):
                         name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
@@ -242,7 +244,6 @@ def fetch_live_data():
             df['lastName'] = df['playerName'].apply(lambda x: str(x).split(' ', 1)[-1].lower() if ' ' in str(x) else str(x).lower())
 
     if not df_p.empty:
-        # Standard pool scoring
         if 'goals' in df_p.columns and 'assists' in df_p.columns:
             df_p['totalPoints'] = df_p['goals'] + df_p['assists']
             
@@ -383,7 +384,6 @@ except:
 def clean_and_match(pick_str, stats_df):
     if pd.isna(pick_str) or str(pick_str).strip() == '': return None
     
-    # Dramatically Improved Parsing Logic to isolate the true LAST NAME
     parts = str(pick_str).split('-')
     name_str = parts[0].strip().replace('ü', 'u')
     t_part = parts[1].strip().upper() if len(parts) > 1 else ""
@@ -400,7 +400,6 @@ def clean_and_match(pick_str, stats_df):
     match = stats_df[(stats_df['lastName'].str.contains(n_part, case=False, na=False)) & (stats_df['teamAbbrev'].str.contains(t_part, case=False, na=False))]
     if not match.empty: return match.iloc[0].to_dict()
     
-    # Fallback: Ignore team abbreviation incase of mid-season trades
     match_name_only = stats_df[stats_df['lastName'].str.contains(n_part, case=False, na=False)]
     if not match_name_only.empty: return match_name_only.iloc[0].to_dict()
     
@@ -415,7 +414,7 @@ for index, row in df_raw.iterrows():
     
     for gm in gms:
         pick_str = str(row.get(gm, '')).strip()
-        if not pick_str or pd.isna(pick_str): continue
+        if not pick_str or pd.isna(pick_str) or pick_str.lower() == 'nan': continue
         
         p_data = clean_and_match(pick_str, stats)
         if p_data is None: continue
@@ -426,7 +425,6 @@ for index, row in df_raw.iterrows():
         p_id = p_data.get('playerId')
         pos = p_data.get('positionCode', '')
         
-        # Last-resort lookup for players missing completely from stats API
         if not p_id or not pos:
             search_name = pick_str.split('-')[0].strip().replace('ü','u').lower()
             for full_name, info in roster_dict.items():
@@ -457,10 +455,15 @@ for index, row in df_raw.iterrows():
 master_df = pd.DataFrame(master_list)
 
 if not master_df.empty:
+    # FORCE ALL STATS TO INTEGERS to prevent catastrophic math crashes!
+    master_df['Points'] = pd.to_numeric(master_df['Points'], errors='coerce').fillna(0).astype(int)
+    master_df['G'] = pd.to_numeric(master_df['G'], errors='coerce').fillna(0).astype(int)
+    master_df['A'] = pd.to_numeric(master_df['A'], errors='coerce').fillna(0).astype(int)
+    master_df['GP'] = pd.to_numeric(master_df['GP'], errors='coerce').fillna(0).astype(int)
+
     master_df['P/PG'] = master_df.apply(lambda r: f"{r['Points'] / r['GP']:.2f}" if r['GP'] > 0 else "0.00", axis=1)
     master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
     
-    # Transform numeric rank to medal icons
     def get_medal(rank):
         if rank == 1: return "🥇 1"
         if rank == 2: return "🥈 2"
@@ -484,10 +487,10 @@ def get_avatar_uri(gm_check_name):
 
 active_img_html = "<span title='Active Today' style='margin-left: 4px;'>🔥</span>"
 
-# --- HTML TABLE GENERATOR ---
+# --- HTML TABLE GENERATORS ---
 def generate_team_html(team_df):
     html = "<table class='team-table'>"
-    html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Top Pick/Rnd</th></tr>"
+    html += "<tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Top Pick/Rnd</th></tr>"
     
     for _, r in team_df.iterrows():
         is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
@@ -505,9 +508,24 @@ def generate_team_html(team_df):
         t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
         
         html += f"<tr style='background-color: {bg}; color: {color}; text-decoration: {text_decor};'>"
-        html += f"<td>{r['Round']}</td><td>{player_cell}</td><td>{t_link}</td><td>{r['Position']}</td>"
+        html += f"<td class='text-left'>{r['Round']}</td><td class='text-left'>{player_cell}</td><td>{t_link}</td><td>{r['Position']}</td>"
         html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
         html += f"<td>{r['P/PG']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
+        
+    html += "</table>"
+    return html
+
+def generate_league_html(lb_df):
+    html = "<table class='team-table'>"
+    html += "<tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Yesterday</th><th>Pts Back</th><th>Players Remaining</th></tr>"
+    
+    for _, r in lb_df.iterrows():
+        avatar_img = f"<img src='{r['Avatar']}' width='30' style='border-radius:50%; vertical-align: middle;'>"
+        
+        html += f"<tr>"
+        html += f"<td><b>{r['Rank']}</b></td><td>{avatar_img}</td><td class='text-left'>{r['Name']}</td>"
+        html += f"<td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td>"
+        html += f"<td>{r['Pts Yesterday']}</td><td>{r['Pts Back']}</td><td>{r['Players Remaining']}</td></tr>"
         
     html += "</table>"
     return html
@@ -551,21 +569,10 @@ if nav == "League":
             return row['GM']
             
         lb['Name'] = lb.apply(add_trophy, axis=1)
-        
         lb['Pts Yesterday'] = 0  
-        lb[''] = lb['GM'].apply(get_avatar_uri) 
+        lb['Avatar'] = lb['GM'].apply(get_avatar_uri) 
         
-        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
-        
-        st.dataframe(
-            lb_final, 
-            hide_index=True, 
-            use_container_width=True,
-            column_config={
-                "Rank": st.column_config.TextColumn("Rank", width="small"),
-                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
-            }
-        )
+        st.markdown(generate_league_html(lb), unsafe_allow_html=True)
 
 elif nav == "My Team":
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
