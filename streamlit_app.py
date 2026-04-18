@@ -8,6 +8,16 @@ import extra_streamlit_components as stx
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
+# --- CUSTOM CSS: REDUCE TOP PADDING ---
+st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 1.5rem;
+            padding-bottom: 0rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 cookie_manager = stx.CookieManager()
 
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
