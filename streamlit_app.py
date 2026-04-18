@@ -4,12 +4,13 @@ import requests
 import datetime
 import base64
 import extra_streamlit_components as stx
+import xml.etree.ElementTree as ET
 import os
 
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: EXTREME PADDING REDUCTION ---
+# --- CUSTOM CSS: EXTREME PADDING REDUCTION & ANIMATIONS ---
 st.markdown("""
     <style>
         .block-container {
@@ -19,6 +20,33 @@ st.markdown("""
         hr {
             margin-top: 0.5em;
             margin-bottom: 0.5em;
+        }
+        /* Rotating Roast Box CSS */
+        .roast-container {
+            background-color: rgba(0, 104, 201, 0.08);
+            border: 1px solid rgba(0, 104, 201, 0.2);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            position: relative;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .quote-1, .quote-2 {
+            position: absolute;
+            width: calc(100% - 2rem);
+            color: #0068c9;
+            font-size: 1rem;
+            animation: fadeSwap 20s infinite;
+        }
+        .quote-1 { animation-delay: 0s; }
+        .quote-2 { animation-delay: 10s; opacity: 0; }
+
+        @keyframes fadeSwap {
+            0%, 45% { opacity: 1; visibility: visible; }
+            50%, 95% { opacity: 0; visibility: hidden; }
+            100% { opacity: 1; visibility: visible; }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -39,6 +67,17 @@ USER_DB = {
     "pgardner355@gmail.com": "Gardner", "aaronmetler@gmail.com": "Aaron"
 }
 SHARED_PWD = "playoffs2026"
+
+TEAM_URLS = {
+    'ANA': 'ducks', 'BOS': 'bruins', 'BUF': 'sabres', 'CGY': 'flames',
+    'CAR': 'hurricanes', 'CHI': 'blackhawks', 'COL': 'avalanche', 'CBJ': 'bluejackets',
+    'DAL': 'stars', 'DET': 'redwings', 'EDM': 'oilers', 'FLA': 'panthers',
+    'LAK': 'kings', 'MIN': 'wild', 'MTL': 'canadiens', 'NSH': 'predators',
+    'NJD': 'devils', 'NYI': 'islanders', 'NYR': 'rangers', 'OTT': 'senators',
+    'PHI': 'flyers', 'PIT': 'penguins', 'SJS': 'sharks', 'SEA': 'kraken',
+    'STL': 'blues', 'TBL': 'lightning', 'TOR': 'mapleleafs', 'UTA': 'utah',
+    'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'
+}
 
 def is_authenticated():
     if st.session_state.authenticated: return True
@@ -71,7 +110,7 @@ if not is_authenticated():
                     st.error("Invalid credentials.")
     st.stop()
 
-# --- 3. MAIN APP HEADER ---
+# --- 3. MAIN APP HEADER (ULTRA COMPACT WITH LOGO) ---
 t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
 
 with t_logo:
@@ -158,6 +197,46 @@ def get_eliminated_teams():
     except: pass
     return [t for t in list(eliminated) if t]
 
+@st.cache_data(ttl=3600)
+def get_daily_headline():
+    headline = "NHL playoffs continue with fierce matchups"
+    try:
+        resp = requests.get("https://www.espn.com/espn/rss/nhl/news", timeout=3)
+        if resp.status_code == 200:
+            root = ET.fromstring(resp.content)
+            items = root.findall('.//item/title')
+            if items: headline = items[0].text
+    except: pass
+    return headline
+
+def get_worst_gm_roast(master_df, headline):
+    if master_df.empty: return f"**NHL News:** {headline}. Meanwhile, everyone here is tied at 0 points."
+    lb = master_df.groupby('GM').agg({'Points': 'sum'}).reset_index()
+    lb = lb.sort_values('Points', ascending=True)
+    worst_gm, worst_pts = lb.iloc[0]['GM'], lb.iloc[0]['Points']
+    
+    roasts = [
+        f"📰 \"{headline}\" — Meanwhile, {worst_gm} is completely oblivious, sitting in last place with a pathetic {worst_pts} points.",
+        f"📰 \"{headline}\" — A major story, unless you are {worst_gm}, whose team is currently a bigger disaster at {worst_pts} points.",
+        f"📰 \"{headline}\" — Sadly, none of this helps {worst_gm}'s roster, which is participating in an active point-scoring boycott.",
+        f"📰 \"{headline}\" — In unrelated news, {worst_gm}'s team continues to be an absolute dumpster fire."
+    ]
+    return roasts[datetime.datetime.now().day % len(roasts)]
+
+def get_team_roast(selected_gm, my_team_df, headline):
+    if my_team_df.empty: return "Where is your team?"
+    pts = my_team_df['Points'].sum()
+    eliminated = my_team_df[my_team_df['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0]
+    
+    if pts == 0:
+        return f"📰 \"{headline}\" — None of this matters to {selected_gm}, whose entire roster is currently invisible (0 points)."
+    elif eliminated >= 4:
+        return f"📰 \"{headline}\" — Fun fact: Half of {selected_gm}'s roster is already golfing while generating a mediocre {pts} points."
+    elif pts < 15:
+        return f"📰 \"{headline}\" — Also, {selected_gm} is struggling to remain relevant with a sad {pts} points."
+    else:
+        return f"📰 \"{headline}\" — {selected_gm} is scraping together {pts} points, but we all know it won't last."
+
 def clean_and_match(player_str, stats_df):
     if pd.isna(player_str) or str(player_str).strip() == '': return None
     clean_p = str(player_str).replace('-', ' ').lower()
@@ -174,6 +253,7 @@ def clean_and_match(player_str, stats_df):
 
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
+DAILY_HEADLINE = get_daily_headline()
 
 try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
@@ -188,105 +268,24 @@ for index, row in df_raw.iterrows():
     round_name = str(row.get('Draft Rounds', ''))
     if "Round" not in round_name: continue
     
-    # Strip "Round " text to leave just the number
     round_num = round_name.replace("Round", "").strip()
     
     for gm in gms:
         pick_str = row.get(gm, '')
         p_data = clean_and_match(pick_str, stats)
         if p_data is None: continue
+        
+        p_name = p_data.get('lastName', pick_str)
+        if 'firstName' in p_data and 'lastName' in p_data: p_name = f"{p_data['firstName']} {p_data['lastName']}"
+        p_id = p_data.get('playerId')
+        player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
+        
+        t_abbrev = p_data.get('teamAbbrev', '')
+        t_url = f"https://www.nhl.com/{TEAM_URLS.get(t_abbrev.upper(), 'standings')}" if t_abbrev else "https://www.nhl.com"
+        
         master_list.append({
             'GM': gm, 
-            'Player': p_data['lastName'], 
-            'Team': p_data.get('teamAbbrev', ''),
-            'Position': p_data.get('positionCode', ''),
-            'Points': p_data.get('totalPoints', 0), 
-            'G': p_data.get('goals', 0), 
-            'A': p_data.get('assists', 0), 
-            'GP': p_data.get('gamesPlayed', 0), 
-            'Round': round_num
-        })
-        
-master_df = pd.DataFrame(master_list)
-
-# Data Processing: Rank by Round and P/PG
-if not master_df.empty:
-    master_df['P/PG'] = master_df.apply(lambda r: round(r['Points'] / r['GP'], 2) if r['GP'] > 0 else 0.00, axis=1)
-    # Ranks players globally based on their draft round and points
-    master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
-
-# --- APPLY DISPLAY NAME GLOBALLY ---
-if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
-    master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
-    display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
-else:
-    display_gms = gms
-
-# --- AVATAR CONVERTER ---
-def get_avatar_uri(gm_check_name):
-    if gm_check_name == st.session_state.display_name and st.session_state.avatar:
-        b64 = base64.b64encode(st.session_state.avatar).decode()
-        return f"data:image/png;base64,{b64}"
-    default_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a0aec0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>'
-    b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
-    return f"data:image/svg+xml;base64,{b64_svg}"
-
-# --- 6. UI VIEWS ---
-if nav == "League":
-    if not master_df.empty:
-        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
-        
-        active_mask = ~master_df['Team'].isin(ELIMINATED_TEAMS)
-        active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
-        lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
-        lb['Players Remaining'] = lb['Players Remaining'].astype(int)
-        
-        lb = lb.sort_values(by=['Points', 'G'], ascending=False).reset_index(drop=True)
-        lb['Rank'] = (lb.index + 1).astype(str) 
-        
-        max_pts = lb['Points'].max() if not lb.empty else 0
-        lb['Pts Back'] = max_pts - lb['Points']
-        
-        def add_trophy(row):
-            if row['Rank'] == '1': return f"🏆 {row['GM']}"
-            elif row['Rank'] == '2': return f"🥈 {row['GM']}"
-            return row['GM']
-            
-        lb['Name'] = lb.apply(add_trophy, axis=1)
-        
-        lb['Pts Yesterday'] = 0  
-        lb[''] = lb['GM'].apply(get_avatar_uri) 
-        
-        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
-        
-        st.dataframe(
-            lb_final, 
-            hide_index=True, 
-            use_container_width=True,
-            column_config={
-                "Rank": st.column_config.TextColumn("Rank", width="small"),
-                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
-            }
-        )
-
-else:
-    default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
-    selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
-    
-    st.markdown("""
-        <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px;'>
-            ➤ <b>Bold</b> indicates playing today<br>
-            ➤ <i>Red Strikethrough</i> indicates eliminated
-        </p>
-    """, unsafe_allow_html=True)
-    
-    if not master_df.empty:
-        my_team = master_df[master_df['GM'] == selected_gm].copy()
-        
-        def style_eliminated(row):
-            if row['Team'] in ELIMINATED_TEAMS: 
-                return ['background-color: #e6f0fa; color: #0068c9; text-decoration: line-through;'] * len(row)
-            return [''] * len(row)
-            
-        styled_team = my_team[['Round', 'Player', 'Team', 'Position', 'GP', 'Points', 'G', 'A', 'P/PG', 'Rank by Round']].style.apply(style_eliminated, axis=1)
-        st.dataframe(styled_team, hide_index=True, use_container_width=True)
+            'Player': f"[{p_name}]({player_url})", 
+            'Team': f"[{t_abbrev}]({t_url})" if t_abbrev else "",
+            'Team_Raw': t_abbrev,
+            'Position': p_data.get('positionCode
