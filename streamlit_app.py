@@ -150,4 +150,76 @@ def fetch_live_data():
         pass
     return pd.DataFrame()
 
-def clean_and_match(player_
+def clean_and_match(player_str, stats_df):
+    if pd.isna(player_str) or str(player_str).strip() == '': return None
+    clean_p = str(player_str).replace('-', ' ').lower()
+    team_map = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}
+    
+    if stats_df.empty:
+        return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
+
+    parts = clean_p.split()
+    team_part = team_map.get(parts[-1].upper(), parts[-1].upper())
+    name_part = parts[0].replace('ü', 'u')
+    if "." in name_part: name_part = parts[1] if len(parts) > 1 else name_part
+
+    match = stats_df[(stats_df['lastName'].str.lower().str.contains(name_part)) & 
+                     (stats_df['teamAbbrev'] == team_part)]
+    
+    return match.iloc[0].to_dict() if not match.empty else None
+
+stats = fetch_live_data()
+
+# Safe CSV Loading
+try:
+    df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
+    if 'Draft Rounds' not in df_raw.columns:
+        df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv", skiprows=1)
+    gms = [col for col in df_raw.columns if col in USER_DB.values()]
+except:
+    st.error("Missing or invalid CSV file: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded to GitHub.")
+    st.stop()
+
+master_list = []
+for index, row in df_raw.iterrows():
+    round_name = str(row.get('Draft Rounds', ''))
+    if "Round" not in round_name: continue
+    
+    for gm in gms:
+        pick_str = row.get(gm, '')
+        p_data = clean_and_match(pick_str, stats)
+        
+        if p_data is None:
+            p_data = {'lastName': pick_str, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
+            
+        master_list.append({
+            'GM': gm, 'Player': p_data['lastName'], 'Pts': p_data.get('totalPoints', 0), 
+            'G': p_data.get('goals', 0), 'A': p_data.get('assists', 0), 'GP': p_data.get('gamesPlayed', 0), 'Round': round_name
+        })
+
+master_df = pd.DataFrame(master_list)
+
+# --- 6. UI VIEWS ---
+if nav == "League":
+    # Removed the large League title since the main App Title covers it
+    st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
+    
+    if not master_df.empty:
+        leaderboard = master_df.groupby('GM').agg({'Pts': 'sum', 'G': 'sum'}).reset_index()
+        leaderboard = leaderboard.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        leaderboard.index += 1
+        st.dataframe(leaderboard, use_container_width=True)
+
+else:
+    # Removed the large "My Team" title to keep the UI clean
+    
+    # Dropdown defaults to logged-in user
+    default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
+    selected_gm = st.selectbox("View Another Team", gms, index=default_idx)
+    
+    st.subheader(f"Roster for {selected_gm}")
+    st.caption("* **Bold** indicates playing today. _Italics_ indicates eliminated.")
+    
+    if not master_df.empty:
+        my_team = master_df[master_df['GM'] == selected_gm]
+        st.table(my_team[['Round', 'Player', 'GP', 'G', 'A', 'Pts']])
