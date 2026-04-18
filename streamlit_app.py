@@ -10,7 +10,7 @@ import os
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: EXTREME PADDING REDUCTION, ANIMATIONS & KPI CENTERING ---
+# --- CUSTOM CSS ---
 st.markdown("""
     <style>
         .block-container {
@@ -22,7 +22,7 @@ st.markdown("""
             margin-bottom: 0.5em;
         }
         
-        /* Roast Box CSS - Reduced Padding and Height */
+        /* Roast Box CSS */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -52,7 +52,7 @@ st.markdown("""
         
         /* Custom Team HTML Table CSS */
         .team-table {
-            width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;
+            width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-bottom: 2rem;
         }
         .team-table th {
             border-bottom: 2px solid #ddd; color: #888; text-align: left; padding: 8px;
@@ -190,9 +190,9 @@ st.divider()
 
 # --- 4. NAVIGATION ---
 try:
-    nav = st.segmented_control("Navigation", ["League", "My Team"], default="League", label_visibility="collapsed")
+    nav = st.segmented_control("Navigation", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed")
 except AttributeError:
-    nav = st.radio("Navigation", ["League", "My Team"], horizontal=True, label_visibility="collapsed")
+    nav = st.radio("Navigation", ["League", "My Team", "All Rosters"], horizontal=True, label_visibility="collapsed")
 
 if nav is None: nav = "League"
 
@@ -205,58 +205,64 @@ def get_roster_dictionary():
             res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current")
             if res.status_code == 200:
                 data = res.json()
-                for group in ['forwards', 'defensemen']:
+                # Include goalies this time!
+                for group in ['forwards', 'defensemen', 'goalies']:
                     for p in data.get(group, []):
                         name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
                         clean_name = name.replace('ü', 'u').replace('.', '')
-                        roster_dict[clean_name] = {'id': p.get('id'), 'pos': p.get('positionCode', '')}
+                        roster_dict[clean_name] = {'id': p.get('id'), 'pos': p.get('positionCode', 'G')}
         except: pass
     return roster_dict
 
 @st.cache_data(ttl=3600)
 def fetch_live_data():
-    base_url = "https://api.nhle.com/stats/rest/en/skater/summary"
+    base_url_skater = "https://api.nhle.com/stats/rest/en/skater/summary"
+    base_url_goalie = "https://api.nhle.com/stats/rest/en/goalie/summary"
     
-    params_p = {
-        "isAggregate": "false", "isGame": "false", 
-        "start": 0, "limit": 1000,
-        "cayenneExp": "gameTypeId=3 and seasonId=20252026"
-    }
-    try:
-        resp_p = requests.get(base_url, params=params_p)
-        df_p = pd.DataFrame(resp_p.json().get('data', [])) if resp_p.status_code == 200 else pd.DataFrame()
-        
-        params_r = {
-            "isAggregate": "false", "isGame": "false", 
-            "start": 0, "limit": 2000,
-            "cayenneExp": "gameTypeId=2 and seasonId=20252026"
-        }
-        resp_r = requests.get(base_url, params=params_r)
-        df_r = pd.DataFrame(resp_r.json().get('data', [])) if resp_r.status_code == 200 else pd.DataFrame()
-        
-        for df in [df_p, df_r]:
-            if not df.empty:
-                df.rename(columns={'skaterFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
-                df['lastName'] = df['playerName'].apply(lambda x: str(x).split(' ', 1)[-1].lower() if ' ' in str(x) else str(x).lower())
-        
-        if not df_p.empty:
-            if not df_r.empty:
-                existing_ids = df_p['playerId'].tolist()
-                df_r = df_r[~df_r['playerId'].isin(existing_ids)].copy()
-                df_r['goals'] = 0
-                df_r['assists'] = 0
-                df_r['totalPoints'] = 0
-                df_r['gamesPlayed'] = 0
-                return pd.concat([df_p, df_r], ignore_index=True)
-            return df_p
-        elif not df_r.empty:
+    def get_data(url, game_type):
+        params = {"isAggregate": "false", "isGame": "false", "start": 0, "limit": 1000, "cayenneExp": f"gameTypeId={game_type} and seasonId=20252026"}
+        try:
+            res = requests.get(url, params=params)
+            if res.status_code == 200: return pd.DataFrame(res.json().get('data', []))
+        except: pass
+        return pd.DataFrame()
+
+    df_p_s = get_data(base_url_skater, 3)
+    df_r_s = get_data(base_url_skater, 2)
+    df_p_g = get_data(base_url_goalie, 3)
+    df_r_g = get_data(base_url_goalie, 2)
+    
+    df_p = pd.concat([df_p_s, df_p_g], ignore_index=True) if not df_p_s.empty or not df_p_g.empty else pd.DataFrame()
+    df_r = pd.concat([df_r_s, df_r_g], ignore_index=True) if not df_r_s.empty or not df_r_g.empty else pd.DataFrame()
+
+    for df in [df_p, df_r]:
+        if not df.empty:
+            df.rename(columns={'skaterFullName': 'playerName', 'goalieFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
+            if 'playerName' not in df.columns: df['playerName'] = ''
+            df['lastName'] = df['playerName'].apply(lambda x: str(x).split(' ', 1)[-1].lower() if ' ' in str(x) else str(x).lower())
+
+    if not df_p.empty:
+        # Standard pool scoring
+        if 'goals' in df_p.columns and 'assists' in df_p.columns:
+            df_p['totalPoints'] = df_p['goals'] + df_p['assists']
+            
+        if not df_r.empty:
+            existing_ids = df_p['playerId'].tolist()
+            df_r = df_r[~df_r['playerId'].isin(existing_ids)].copy()
             df_r['goals'] = 0
             df_r['assists'] = 0
             df_r['totalPoints'] = 0
             df_r['gamesPlayed'] = 0
-            return df_r
-            
-    except Exception: pass
+            return pd.concat([df_p, df_r], ignore_index=True)
+        return df_p
+        
+    elif not df_r.empty:
+        df_r['goals'] = 0
+        df_r['assists'] = 0
+        df_r['totalPoints'] = 0
+        df_r['gamesPlayed'] = 0
+        return df_r
+        
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -374,22 +380,31 @@ except:
     st.error("Missing or invalid CSV file.")
     st.stop()
 
-def clean_and_match(player_str, stats_df):
-    if pd.isna(player_str) or str(player_str).strip() == '': return None
-    clean_p = str(player_str).replace('-', ' ').lower()
+def clean_and_match(pick_str, stats_df):
+    if pd.isna(pick_str) or str(pick_str).strip() == '': return None
+    
+    # Dramatically Improved Parsing Logic to isolate the true LAST NAME
+    parts = str(pick_str).split('-')
+    name_str = parts[0].strip().replace('ü', 'u')
+    t_part = parts[1].strip().upper() if len(parts) > 1 else ""
+    
     team_map = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}
-    parts = clean_p.split()
-    t_part = team_map.get(parts[-1].upper(), parts[-1].upper())
-    n_part = parts[0].replace('ü', 'u').lower()
-    if "." in n_part: n_part = parts[1].lower() if len(parts) > 1 else n_part
+    t_part = team_map.get(t_part, t_part)
+    
+    name_tokens = name_str.split()
+    n_part = name_tokens[-1].lower() if name_tokens else ""
     
     if stats_df.empty:
-        return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': ''}
+        return {'lastName': n_part, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': name_str.title()}
     
-    match = stats_df[(stats_df['lastName'].str.contains(n_part)) & (stats_df['teamAbbrev'].str.contains(t_part, na=False, case=False))]
+    match = stats_df[(stats_df['lastName'].str.contains(n_part, case=False, na=False)) & (stats_df['teamAbbrev'].str.contains(t_part, case=False, na=False))]
     if not match.empty: return match.iloc[0].to_dict()
     
-    return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': ''}
+    # Fallback: Ignore team abbreviation incase of mid-season trades
+    match_name_only = stats_df[stats_df['lastName'].str.contains(n_part, case=False, na=False)]
+    if not match_name_only.empty: return match_name_only.iloc[0].to_dict()
+    
+    return {'lastName': n_part, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': name_str.title()}
 
 master_list = []
 for index, row in df_raw.iterrows():
@@ -409,17 +424,19 @@ for index, row in df_raw.iterrows():
         if not p_name: p_name = pick_str.split('-')[0].strip()
         
         p_id = p_data.get('playerId')
+        pos = p_data.get('positionCode', '')
         
-        # Only fallback to search if we don't have the ID from standard endpoints
-        if not p_id:
-            # Check secondary local master dictionary
+        # Last-resort lookup for players missing completely from stats API
+        if not p_id or not pos:
+            search_name = pick_str.split('-')[0].strip().replace('ü','u').lower()
             for full_name, info in roster_dict.items():
-                if pick_str.split('-')[0].strip().replace('ü','u').lower() in full_name:
-                    p_id = info['id']
+                if search_name in full_name or full_name in search_name:
+                    p_id = p_id or info['id']
+                    pos = pos or info['pos']
                     break
         
         player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
-        t_abbrev = p_data.get('teamAbbrev', pick_str.split()[-1].upper())
+        t_abbrev = p_data.get('teamAbbrev', pick_str.split()[-1].upper() if '-' in pick_str else "")
         t_url = f"https://www.nhl.com/{TEAM_URLS.get(t_abbrev, 'standings')}" if t_abbrev else "https://www.nhl.com"
         
         master_list.append({
@@ -429,7 +446,7 @@ for index, row in df_raw.iterrows():
             'Player_URL': player_url,
             'Team_Raw': t_abbrev,
             'Team_URL': t_url,
-            'Position': p_data.get('positionCode', ''),
+            'Position': pos,
             'Points': p_data.get('totalPoints', 0), 
             'G': p_data.get('goals', 0), 
             'A': p_data.get('assists', 0), 
@@ -442,12 +459,20 @@ master_df = pd.DataFrame(master_list)
 if not master_df.empty:
     master_df['P/PG'] = master_df.apply(lambda r: f"{r['Points'] / r['GP']:.2f}" if r['GP'] > 0 else "0.00", axis=1)
     master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
+    
+    # Transform numeric rank to medal icons
+    def get_medal(rank):
+        if rank == 1: return "🥇 1"
+        if rank == 2: return "🥈 2"
+        if rank == 3: return "🥉 3"
+        return str(rank)
+    master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(get_medal)
 
 if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
-    display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
+    display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms])
 else:
-    display_gms = gms
+    display_gms = sorted(gms)
 
 def get_avatar_uri(gm_check_name):
     if gm_check_name == st.session_state.display_name and st.session_state.avatar:
@@ -458,6 +483,35 @@ def get_avatar_uri(gm_check_name):
     return f"data:image/svg+xml;base64,{b64_svg}"
 
 active_img_html = "<span title='Active Today' style='margin-left: 4px;'>🔥</span>"
+
+# --- HTML TABLE GENERATOR ---
+def generate_team_html(team_df):
+    html = "<table class='team-table'>"
+    html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Top Pick/Rnd</th></tr>"
+    
+    for _, r in team_df.iterrows():
+        is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
+        is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
+        
+        bg = "transparent" 
+        color = "inherit"  
+        text_decor = "line-through" if is_elim else "none"
+        
+        p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Player_Name']}</a>"
+        news_link = f"<a href='https://news.google.com/search?q={str(r['Player_Name']).replace(' ', '+')}+NHL+when:2d' target='_blank' title='Player News' style='text-decoration: none;'>📄</a>"
+        active_indicator = f" {active_img_html}" if is_playing else ""
+        
+        player_cell = f"{p_link} {news_link}{active_indicator}"
+        t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
+        
+        html += f"<tr style='background-color: {bg}; color: {color}; text-decoration: {text_decor};'>"
+        html += f"<td>{r['Round']}</td><td>{player_cell}</td><td>{t_link}</td><td>{r['Position']}</td>"
+        html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
+        html += f"<td>{r['P/PG']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
+        
+    html += "</table>"
+    return html
+
 
 # --- 6. UI VIEWS ---
 LEAFS_ROASTS = [
@@ -513,7 +567,7 @@ if nav == "League":
             }
         )
 
-else:
+elif nav == "My Team":
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
     selected_gm_temp = st.session_state.get('selected_gm_val', display_gms[default_idx])
     my_team_df_preview = master_df[master_df['GM'] == selected_gm_temp] if not master_df.empty else pd.DataFrame()
@@ -525,7 +579,6 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    # 5-Column Layout for KPIs
     c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
     
     with c1:
@@ -568,33 +621,20 @@ else:
             my_team['G'] = "-" 
             my_team['A'] = "-"
             my_team['P/PG'] = "-"
-            my_team['Rank by Round'] = "-"
+            my_team['Top Pick/Rnd'] = "-"
         
-        html = "<table class='team-table'>"
-        html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
-        
-        for _, r in my_team.iterrows():
-            is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
-            is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
-            
-            bg = "transparent" 
-            color = "inherit"  
-            text_decor = "line-through" if is_elim else "none"
-            
-            p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Player_Name']}</a>"
-            
-            news_link = f"<a href='https://news.google.com/search?q={str(r['Player_Name']).replace(' ', '+')}+NHL+when:2d' target='_blank' title='Player News' style='text-decoration: none;'>📄</a>"
-            
-            active_indicator = f" {active_img_html}" if is_playing else ""
-            
-            player_cell = f"{p_link} {news_link}{active_indicator}"
-            
-            t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
-            
-            html += f"<tr style='background-color: {bg}; color: {color}; text-decoration: {text_decor};'>"
-            html += f"<td>{r['Round']}</td><td>{player_cell}</td><td>{t_link}</td><td>{r['Position']}</td>"
-            html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
-            html += f"<td>{r['P/PG']}</td><td>{r['Rank by Round']}</td></tr>"
-            
-        html += "</table>"
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(generate_team_html(my_team), unsafe_allow_html=True)
+
+elif nav == "All Rosters":
+    st.markdown(f"""
+        <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px; line-height: 1.6;'>
+            ➤ {active_img_html} indicates playing today<br>
+            ➤ <span style="text-decoration: line-through;">Strikethrough</span> indicates player is eliminated
+        </p>
+    """, unsafe_allow_html=True)
+    
+    if not master_df.empty:
+        for gm in display_gms:
+            st.markdown(f"<h3 style='color: #0068c9; margin-top: 20px;'>{gm}</h3>", unsafe_allow_html=True)
+            gm_team = master_df[master_df['GM'] == gm].copy()
+            st.markdown(generate_team_html(gm_team), unsafe_allow_html=True)
