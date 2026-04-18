@@ -64,7 +64,7 @@ if not is_authenticated():
                     cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=30))
                     st.session_state.authenticated = True
                     st.session_state.gm_name = USER_DB[email]
-                    st.session_state.display_name = USER_DB[email] # Set initial display name
+                    st.session_state.display_name = USER_DB[email]
                     st.rerun()
                 else:
                     st.error("Invalid credentials.")
@@ -75,21 +75,22 @@ if not is_authenticated():
 # ==========================================
 
 # --- TOP RIGHT HEADER: Welcome, Avatar & Dropdown Menu ---
-# We use columns to push everything to the top right.
-spacer, t_text, t_img, t_menu = st.columns([6.5, 2.5, 0.5, 0.5])
+spacer, t_text, t_img, t_menu = st.columns([7, 2, 0.5, 0.5])
 
 with t_text:
-    # Adding slight top padding to vertically align text with the image
-    st.markdown(f"<div style='text-align: right; padding-top: 10px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+    # Adding margin to vertically align the text with the image/button
+    st.markdown(f"<div style='text-align: right; margin-top: 8px; font-size: 18px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 with t_img:
     if st.session_state.avatar:
+        # Replaces the icon with the uploaded avatar
         st.image(st.session_state.avatar, width=40)
     else:
-        st.markdown("<div style='font-size: 24px; text-align: left;'>👤</div>", unsafe_allow_html=True)
+        # Default user icon
+        st.markdown("<div style='font-size: 26px; text-align: center; margin-top: -2px;'>👤</div>", unsafe_allow_html=True)
 
 with t_menu:
-    # st.popover acts as our dropdown menu
+    # The dropdown menu attached right next to the avatar
     with st.popover("⚙️"):
         st.markdown("**Profile Settings**")
         
@@ -102,7 +103,7 @@ with t_menu:
         st.divider()
         
         # Change Avatar Feature
-        file = st.file_uploader("Update Avatar", type=["jpg", "png", "jpeg"])
+        file = st.file_uploader("Upload Avatar", type=["jpg", "png", "jpeg"])
         if st.button("Save Avatar"):
             if file:
                 st.session_state.avatar = file.getvalue()
@@ -121,7 +122,23 @@ with t_menu:
 
 st.divider()
 
-# --- 4. DATA LOADING & NORMALIZATION ---
+# --- 4. WEB 3.0 MODERN NAVIGATION ---
+# Uses a try/except to use the most modern nav component available on your server
+try:
+    nav = st.segmented_control("Navigation", ["League", "My Team"], default="League", label_visibility="collapsed")
+except AttributeError:
+    try:
+        nav = st.pills("Navigation", ["League", "My Team"], default="League", label_visibility="collapsed")
+    except AttributeError:
+        nav = st.radio("Navigation", ["League", "My Team"], horizontal=True, label_visibility="collapsed")
+
+# Safeguard in case the user deselects the modern navigation buttons
+if nav is None:
+    nav = "League"
+
+st.write("") # Tiny spacer
+
+# --- 5. DATA LOADING & NORMALIZATION ---
 @st.cache_data(ttl=3600)
 def fetch_live_data():
     stats_url = "https://api-web.nhle.com/v1/skater-stats-now"
@@ -172,44 +189,4 @@ for index, row in df_raw.iterrows():
     round_name = str(row.get('Draft Rounds', ''))
     if "Round" not in round_name: continue
     
-    for gm in gms:
-        pick_str = row.get(gm, '')
-        p_data = clean_and_match(pick_str, stats)
-        
-        if p_data is None:
-            p_data = {'lastName': pick_str, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
-            
-        master_list.append({
-            'GM': gm, 'Player': p_data['lastName'], 'Pts': p_data.get('totalPoints', 0), 
-            'G': p_data.get('goals', 0), 'A': p_data.get('assists', 0), 'GP': p_data.get('gamesPlayed', 0), 'Round': round_name
-        })
-
-master_df = pd.DataFrame(master_list)
-
-# --- 5. NAVIGATION & UI VIEWS ---
-nav = st.radio("Navigation", ["League", "My Team"], horizontal=True, label_visibility="collapsed")
-st.write("") # Tiny spacer
-
-if nav == "League":
-    st.title("🏆 League Standings")
-    st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
-    
-    if not master_df.empty:
-        leaderboard = master_df.groupby('GM').agg({'Pts': 'sum', 'G': 'sum'}).reset_index()
-        leaderboard = leaderboard.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
-        leaderboard.index += 1
-        st.dataframe(leaderboard, use_container_width=True)
-
-else:
-    st.title("🏒 My Team")
-    
-    # Dropdown defaults to logged-in user
-    default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
-    selected_gm = st.selectbox("View Another Team", gms, index=default_idx)
-    
-    st.subheader(f"Roster for {selected_gm}")
-    st.caption("* **Bold** indicates playing today. _Italics_ indicates eliminated.")
-    
-    if not master_df.empty:
-        my_team = master_df[master_df['GM'] == selected_gm]
-        st.table(my_team[['Round', 'Player', 'GP', 'G', 'A', 'Pts']])
+    for gm in gms
