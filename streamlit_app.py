@@ -197,11 +197,26 @@ except AttributeError:
 if nav is None: nav = "League"
 
 # --- 5. DATA FETCHING & LOGIC ---
+@st.cache_data(ttl=3600*24)
+def get_roster_dictionary():
+    roster_dict = {}
+    for t in TEAM_URLS.keys():
+        try:
+            res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current")
+            if res.status_code == 200:
+                data = res.json()
+                for group in ['forwards', 'defensemen']:
+                    for p in data.get(group, []):
+                        name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
+                        clean_name = name.replace('ü', 'u').replace('.', '')
+                        roster_dict[clean_name] = {'id': p.get('id'), 'pos': p.get('positionCode', '')}
+        except: pass
+    return roster_dict
+
 @st.cache_data(ttl=3600)
 def fetch_live_data():
     base_url = "https://api.nhle.com/stats/rest/en/skater/summary"
     
-    # Pull Playoff Stats
     params_p = {
         "isAggregate": "false", "isGame": "false", 
         "start": 0, "limit": 1000,
@@ -211,7 +226,6 @@ def fetch_live_data():
         resp_p = requests.get(base_url, params=params_p)
         df_p = pd.DataFrame(resp_p.json().get('data', [])) if resp_p.status_code == 200 else pd.DataFrame()
         
-        # Pull Regular Season Stats for 0-point player mapping
         params_r = {
             "isAggregate": "false", "isGame": "false", 
             "start": 0, "limit": 2000,
@@ -220,7 +234,6 @@ def fetch_live_data():
         resp_r = requests.get(base_url, params=params_r)
         df_r = pd.DataFrame(resp_r.json().get('data', [])) if resp_r.status_code == 200 else pd.DataFrame()
         
-        # Normalize column names
         for df in [df_p, df_r]:
             if not df.empty:
                 df.rename(columns={'skaterFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
@@ -243,7 +256,7 @@ def fetch_live_data():
             df_r['gamesPlayed'] = 0
             return df_r
             
-    except Exception as e: pass
+    except Exception: pass
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
@@ -255,7 +268,6 @@ def get_historical_points(player_ids, days):
             hist_pts[pid] = 0
             continue
         try:
-            # Note: Fetching game logs requires individual requests, returning 0 if NHL endpoint shifts
             res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/now")
             pts = 0
             if res.status_code == 200:
@@ -348,6 +360,7 @@ def get_team_roast(selected_gm, my_team_df, headline):
     else:
         return f"📰 \"{headline}\" — {selected_gm} is scraping together {pts} points, but we all know it won't last."
 
+roster_dict = get_roster_dictionary()
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
 TEAMS_PLAYING_TODAY = get_teams_playing_today()
@@ -373,7 +386,6 @@ def clean_and_match(player_str, stats_df):
     if stats_df.empty:
         return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': ''}
     
-    # Official API match
     match = stats_df[(stats_df['lastName'].str.contains(n_part)) & (stats_df['teamAbbrev'].str.contains(t_part, na=False, case=False))]
     if not match.empty: return match.iloc[0].to_dict()
     
@@ -393,13 +405,20 @@ for index, row in df_raw.iterrows():
         p_data = clean_and_match(pick_str, stats)
         if p_data is None: continue
         
-        # Name formulation
         p_name = p_data.get('playerName', '')
         if not p_name: p_name = pick_str.split('-')[0].strip()
         
         p_id = p_data.get('playerId')
-        player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
         
+        # Only fallback to search if we don't have the ID from standard endpoints
+        if not p_id:
+            # Check secondary local master dictionary
+            for full_name, info in roster_dict.items():
+                if pick_str.split('-')[0].strip().replace('ü','u').lower() in full_name:
+                    p_id = info['id']
+                    break
+        
+        player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
         t_abbrev = p_data.get('teamAbbrev', pick_str.split()[-1].upper())
         t_url = f"https://www.nhl.com/{TEAM_URLS.get(t_abbrev, 'standings')}" if t_abbrev else "https://www.nhl.com"
         
@@ -438,7 +457,6 @@ def get_avatar_uri(gm_check_name):
     b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
     return f"data:image/svg+xml;base64,{b64_svg}"
 
-# Text emoji instead of external file
 active_img_html = "<span title='Active Today' style='margin-left: 4px;'>🔥</span>"
 
 # --- 6. UI VIEWS ---
@@ -507,7 +525,8 @@ else:
         </div>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3, c4 = st.columns([2.5, 2.5, 1.5, 1.5])
+    # 5-Column Layout for KPIs
+    c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
     
     with c1:
         selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx, key="selected_gm_val")
@@ -518,9 +537,19 @@ else:
     my_team = master_df[master_df['GM'] == selected_gm].copy() if not master_df.empty else pd.DataFrame()
     
     with c3:
+        pts_today = 0
+        if not my_team.empty:
+            active_pids = my_team[my_team['Team_Raw'].isin(TEAMS_PLAYING_TODAY)]['Player_Id'].dropna().tolist()
+            if active_pids:
+                today_data = get_historical_points(active_pids, 0)
+                pts_today = sum(today_data.values())
+        st.metric("Points Today", pts_today)
+        
+    with c4:
         active_count = my_team[my_team['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_team['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team.empty else 0
         st.metric("Players Active Today", active_count)
-    with c4:
+        
+    with c5:
         alive_count = my_team[~my_team['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team.empty else 0
         st.metric("Players Remaining", alive_count)
 
@@ -554,13 +583,10 @@ else:
             
             p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Player_Name']}</a>"
             
-            # News Link (Document Icon)
-            news_link = f"<a href='https://news.google.com/search?q={r['Player_Name'].replace(' ', '+')}+NHL+when:2d' target='_blank' title='Player News' style='text-decoration: none;'>📄</a>"
+            news_link = f"<a href='https://news.google.com/search?q={str(r['Player_Name']).replace(' ', '+')}+NHL+when:2d' target='_blank' title='Player News' style='text-decoration: none;'>📄</a>"
             
-            # Active Icon
             active_indicator = f" {active_img_html}" if is_playing else ""
             
-            # Combine Player Link + News + Active Indicator (No Bolding)
             player_cell = f"{p_link} {news_link}{active_indicator}"
             
             t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
