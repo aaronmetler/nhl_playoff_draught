@@ -48,6 +48,19 @@ st.markdown("""
             50%, 95% { opacity: 0; visibility: hidden; }
             100% { opacity: 1; visibility: visible; }
         }
+        
+        /* Custom Team HTML Table CSS */
+        .team-table {
+            width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;
+        }
+        .team-table th {
+            border-bottom: 2px solid #ddd; color: #888; text-align: left; padding: 8px;
+        }
+        .team-table td {
+            border-bottom: 1px solid #eee; padding: 8px;
+        }
+        .team-table a { text-decoration: none; }
+        .team-table a:hover { text-decoration: underline; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -110,12 +123,11 @@ if not is_authenticated():
                     st.error("Invalid credentials.")
     st.stop()
 
-# --- 3. MAIN APP HEADER (ULTRA COMPACT WITH LOGO) ---
+# --- 3. MAIN APP HEADER ---
 t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
 
 with t_logo:
-    if os.path.exists("logo.png"):
-        st.image("logo.png", width=55)
+    if os.path.exists("logo.png"): st.image("logo.png", width=55)
         
 with t_title: 
     st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
@@ -198,6 +210,23 @@ def get_eliminated_teams():
     return [t for t in list(eliminated) if t]
 
 @st.cache_data(ttl=3600)
+def get_teams_playing_today():
+    try:
+        res = requests.get("https://api-web.nhle.com/v1/schedule/now")
+        if res.status_code == 200:
+            data = res.json()
+            teams = set()
+            today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            for day in data.get('gameWeek', []):
+                if day.get('date') == today_str:
+                    for game in day.get('games', []):
+                        teams.add(game['awayTeam']['abbrev'])
+                        teams.add(game['homeTeam']['abbrev'])
+            return list(teams)
+    except: pass
+    return []
+
+@st.cache_data(ttl=3600)
 def get_daily_headline():
     headline = "NHL playoffs continue with fierce matchups"
     try:
@@ -253,6 +282,7 @@ def clean_and_match(player_str, stats_df):
 
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
+TEAMS_PLAYING_TODAY = get_teams_playing_today()
 DAILY_HEADLINE = get_daily_headline()
 
 try:
@@ -285,9 +315,10 @@ for index, row in df_raw.iterrows():
         
         master_list.append({
             'GM': gm, 
-            'Player': f"[{p_name}]({player_url})", 
-            'Team': f"[{t_abbrev}]({t_url})" if t_abbrev else "",
+            'Player_Name': p_name,
+            'Player_URL': player_url,
             'Team_Raw': t_abbrev,
+            'Team_URL': t_url,
             'Position': p_data.get('positionCode', ''),
             'Points': p_data.get('totalPoints', 0), 
             'G': p_data.get('goals', 0), 
@@ -331,83 +362,3 @@ if nav == "League":
     leafs_quote = LEAFS_ROASTS[datetime.datetime.now().day % len(LEAFS_ROASTS)]
     worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
     st.markdown(f"""
-        <div class="roast-container">
-            <div class="quote-1">🍁 <b>{leafs_quote}</b></div>
-            <div class="quote-2">🚨 <b>{worst_gm_quote}</b></div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    if not master_df.empty:
-        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
-        
-        active_mask = ~master_df['Team_Raw'].isin(ELIMINATED_TEAMS)
-        active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
-        lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
-        lb['Players Remaining'] = lb['Players Remaining'].astype(int)
-        
-        lb = lb.sort_values(by=['Points', 'G'], ascending=False).reset_index(drop=True)
-        lb['Rank'] = (lb.index + 1).astype(str) 
-        
-        max_pts = lb['Points'].max() if not lb.empty else 0
-        lb['Pts Back'] = max_pts - lb['Points']
-        
-        def add_trophy(row):
-            if row['Rank'] == '1': return f"🏆 {row['GM']}"
-            elif row['Rank'] == '2': return f"🥈 {row['GM']}"
-            return row['GM']
-            
-        lb['Name'] = lb.apply(add_trophy, axis=1)
-        
-        lb['Pts Yesterday'] = 0  
-        lb[''] = lb['GM'].apply(get_avatar_uri) 
-        
-        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
-        
-        st.dataframe(
-            lb_final, 
-            hide_index=True, 
-            use_container_width=True,
-            column_config={
-                "Rank": st.column_config.TextColumn("Rank", width="small"),
-                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
-            }
-        )
-
-else:
-    default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
-    selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
-    
-    # Static GM-Specific Roast Box
-    my_team_df = master_df[master_df['GM'] == selected_gm] if not master_df.empty else pd.DataFrame()
-    gm_specific_roast = get_team_roast(selected_gm, my_team_df, DAILY_HEADLINE)
-    st.markdown(f"""
-        <div class="roast-container" style="animation: none;">
-            <div style="color: #0068c9; font-size: 1rem;">🔥 <b>{gm_specific_roast}</b></div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-        <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px;'>
-            ➤ <b>Bold</b> indicates playing today<br>
-            ➤ <i>Red Strikethrough</i> indicates eliminated
-        </p>
-    """, unsafe_allow_html=True)
-    
-    if not master_df.empty:
-        my_team = master_df[master_df['GM'] == selected_gm].copy()
-        
-        def style_eliminated(row):
-            if row['Team_Raw'] in ELIMINATED_TEAMS: 
-                return ['background-color: #e6f0fa; color: #0068c9; text-decoration: line-through;'] * len(row)
-            return [''] * len(row)
-            
-        styled_team = my_team[['Round', 'Player', 'Team', 'Position', 'GP', 'Points', 'G', 'A', 'P/PG', 'Rank by Round', 'Team_Raw']].style.apply(style_eliminated, axis=1)
-        
-        st.dataframe(
-            styled_team, 
-            hide_index=True, 
-            use_container_width=True,
-            column_config={
-                "Team_Raw": None  # Hides the raw column used for math
-            }
-        )
