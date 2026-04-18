@@ -176,7 +176,6 @@ for index, row in df_raw.iterrows():
 master_df = pd.DataFrame(master_list)
 
 # --- APPLY DISPLAY NAME GLOBALLY ---
-# If the user changed their name, update their team name across the entire app
 if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
     display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
@@ -185,11 +184,9 @@ else:
 
 # --- AVATAR CONVERTER ---
 def get_avatar_uri(gm_check_name):
-    # If it's the logged in user and they have an avatar, convert it to a Base64 image
     if gm_check_name == st.session_state.display_name and st.session_state.avatar:
         b64 = base64.b64encode(st.session_state.avatar).decode()
         return f"data:image/png;base64,{b64}"
-    # Otherwise, return an indestructible SVG data string of a user icon
     default_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a0aec0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>'
     b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
     return f"data:image/svg+xml;base64,{b64_svg}"
@@ -207,33 +204,40 @@ if nav == "League":
         lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
         lb['Players Remaining'] = lb['Players Remaining'].astype(int)
         
-        # 3. Sort and calculate Points Back
+        # 3. Sort, Calculate Rank, Points Back
         lb = lb.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        lb['Rank'] = lb.index + 1
         max_pts = lb['Pts'].max() if not lb.empty else 0
         lb['Pts Back'] = max_pts - lb['Pts']
         
+        # Add Trophies to Top 2 Teams
+        def add_trophy(row):
+            if row['Rank'] == 1: return f"🏆 {row['GM']}"
+            elif row['Rank'] == 2: return f"🥈 {row['GM']}"
+            return row['GM']
+            
+        lb['Name'] = lb.apply(add_trophy, axis=1)
+        
         # 4. Add placeholders and format columns
         lb['Pts Yesterday'] = 0  
-        
-        # Convert GM name to Image URI for the Avatar column
         lb[''] = lb['GM'].apply(get_avatar_uri) 
+        lb = lb.rename(columns={'Pts': 'Points'})
         
-        # Rename and Order
-        lb = lb.rename(columns={'GM': 'Name', 'Pts': 'Points'})
-        lb_final = lb[['', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
+        # 5. Ordered Columns
+        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
-        # Display using column_config to render the image properly
+        # Display using column_config to force narrow columns for Rank & Avatar
         st.dataframe(
             lb_final, 
             hide_index=True, 
             use_container_width=True,
             column_config={
-                "": st.column_config.ImageColumn(" ", help="Avatar")
+                "Rank": st.column_config.NumberColumn("Rank", width="small"),
+                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
             }
         )
 
 else:
-    # Dropdown uses the updated display names list
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
     selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
     st.subheader(f"Roster for {selected_gm}")
