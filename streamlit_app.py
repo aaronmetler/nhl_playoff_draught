@@ -4,16 +4,23 @@ import requests
 import datetime
 import base64
 import extra_streamlit_components as stx
+import os
 
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
 # --- CUSTOM CSS: EXTREME PADDING REDUCTION ---
+# This CSS pulls the entire app up to the very top edge of the browser
 st.markdown("""
     <style>
         .block-container {
-            padding-top: 1rem;
+            padding-top: 0.5rem;
             padding-bottom: 0rem;
+        }
+        /* Reduce space below the header */
+        hr {
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -66,17 +73,26 @@ if not is_authenticated():
                     st.error("Invalid credentials.")
     st.stop()
 
-# --- 3. MAIN APP HEADER (COMPACT) ---
-t_title, t_text, t_img, t_menu = st.columns([5.5, 3.5, 0.5, 0.5])
+# --- 3. MAIN APP HEADER (ULTRA COMPACT WITH LOGO) ---
+# Added a new tiny column (t_logo) at the far left for your uploaded image
+t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
+
+with t_logo:
+    # Checks if you uploaded logo.png to GitHub, and displays it if you did
+    if os.path.exists("logo.png"):
+        st.image("logo.png", width=55)
+        
 with t_title: 
-    # Pulled way up with negative margins to save vertical space
-    st.markdown("<h1 style='margin-top: -25px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+    # Adjusted margins to align perfectly with the new logo
+    st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+    
 with t_text: 
-    # Aligned to the new title height
-    st.markdown(f"<div style='text-align: right; margin-top: 0px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: right; margin-top: 5px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+    
 with t_img:
     if st.session_state.avatar: st.image(st.session_state.avatar, width=35)
-    else: st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -8px;'>👤</div>", unsafe_allow_html=True)
+    else: st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -3px;'>👤</div>", unsafe_allow_html=True)
+    
 with t_menu:
     with st.popover("⚙️"):
         st.markdown("**Profile Settings**")
@@ -205,7 +221,6 @@ def get_avatar_uri(gm_check_name):
 
 # --- 6. UI VIEWS ---
 if nav == "League":
-    st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
     if not master_df.empty:
         lb = master_df.groupby('GM').agg({'GP': 'sum', 'Pts': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
         
