@@ -8,11 +8,11 @@ import extra_streamlit_components as stx
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: REDUCE TOP PADDING ---
+# --- CUSTOM CSS: EXTREME PADDING REDUCTION ---
 st.markdown("""
     <style>
         .block-container {
-            padding-top: 1.5rem;
+            padding-top: 1rem;
             padding-bottom: 0rem;
         }
     </style>
@@ -66,15 +66,17 @@ if not is_authenticated():
                     st.error("Invalid credentials.")
     st.stop()
 
-# --- 3. MAIN APP HEADER ---
+# --- 3. MAIN APP HEADER (COMPACT) ---
 t_title, t_text, t_img, t_menu = st.columns([5.5, 3.5, 0.5, 0.5])
 with t_title: 
-    st.markdown("<h1 style='margin-top: -15px; margin-bottom: 0px; font-size: 3.2rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+    # Pulled way up with negative margins to save vertical space
+    st.markdown("<h1 style='margin-top: -25px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
 with t_text: 
-    st.markdown(f"<div style='text-align: right; margin-top: 10px; font-size: 18px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+    # Aligned to the new title height
+    st.markdown(f"<div style='text-align: right; margin-top: 0px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 with t_img:
-    if st.session_state.avatar: st.image(st.session_state.avatar, width=40)
-    else: st.markdown("<div style='font-size: 26px; text-align: center; margin-top: -2px;'>👤</div>", unsafe_allow_html=True)
+    if st.session_state.avatar: st.image(st.session_state.avatar, width=35)
+    else: st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -8px;'>👤</div>", unsafe_allow_html=True)
 with t_menu:
     with st.popover("⚙️"):
         st.markdown("**Profile Settings**")
@@ -96,6 +98,7 @@ with t_menu:
             st.session_state.display_name = None
             st.session_state.avatar = None
             st.rerun()
+            
 st.divider()
 
 # --- 4. NAVIGATION ---
@@ -105,7 +108,6 @@ except AttributeError:
     nav = st.radio("Navigation", ["League", "My Team"], horizontal=True, label_visibility="collapsed")
 
 if nav is None: nav = "League"
-st.write("") 
 
 # --- 5. DATA FETCHING & LOGIC ---
 @st.cache_data(ttl=3600)
@@ -205,24 +207,19 @@ def get_avatar_uri(gm_check_name):
 if nav == "League":
     st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
     if not master_df.empty:
-        # 1. Base aggregations
         lb = master_df.groupby('GM').agg({'GP': 'sum', 'Pts': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
         
-        # 2. Calculate Players Remaining
         active_mask = ~master_df['Team'].isin(ELIMINATED_TEAMS)
         active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
         lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
         lb['Players Remaining'] = lb['Players Remaining'].astype(int)
         
-        # 3. Sort, Calculate Rank (as text to left-align), Points Back
         lb = lb.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
-        # Convert Rank to string format immediately so Streamlit left-aligns it
         lb['Rank'] = (lb.index + 1).astype(str) 
         
         max_pts = lb['Pts'].max() if not lb.empty else 0
         lb['Pts Back'] = max_pts - lb['Pts']
         
-        # Add Trophies to Top 2 Teams (using the new string format for Rank)
         def add_trophy(row):
             if row['Rank'] == '1': return f"🏆 {row['GM']}"
             elif row['Rank'] == '2': return f"🥈 {row['GM']}"
@@ -230,15 +227,12 @@ if nav == "League":
             
         lb['Name'] = lb.apply(add_trophy, axis=1)
         
-        # 4. Add placeholders and format columns
         lb['Pts Yesterday'] = 0  
         lb[''] = lb['GM'].apply(get_avatar_uri) 
         lb = lb.rename(columns={'Pts': 'Points'})
         
-        # 5. Ordered Columns
         lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
-        # Display using column_config to force narrow columns for Rank & Avatar
         st.dataframe(
             lb_final, 
             hide_index=True, 
@@ -252,7 +246,6 @@ if nav == "League":
 else:
     default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
     selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
-    st.subheader(f"Roster for {selected_gm}")
     st.caption("* **Bold** indicates playing today. _Red Strikethrough_ indicates eliminated.")
     if not master_df.empty:
         my_team = master_df[master_df['GM'] == selected_gm].copy()
