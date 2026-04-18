@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
+import base64
 import extra_streamlit_components as stx
 
 # --- 1. CONFIG & SESSION INITIALIZATION ---
@@ -112,7 +113,6 @@ def fetch_live_data():
 
 @st.cache_data(ttl=3600)
 def get_eliminated_teams():
-    # Automatically extracts teams that have lost 4 games in a playoff series
     eliminated = set()
     try:
         res = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026")
@@ -175,37 +175,67 @@ for index, row in df_raw.iterrows():
         })
 master_df = pd.DataFrame(master_list)
 
+# --- APPLY DISPLAY NAME GLOBALLY ---
+# If the user changed their name, update their team name across the entire app
+if st.session_state.display_name and st.session_state.display_name != st.session_state.gm_name:
+    master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
+    display_gms = [st.session_state.display_name if g == st.session_state.gm_name else g for g in gms]
+else:
+    display_gms = gms
+
+# --- AVATAR CONVERTER ---
+def get_avatar_uri(gm_check_name):
+    # If it's the logged in user and they have an avatar, convert it to a Base64 image
+    if gm_check_name == st.session_state.display_name and st.session_state.avatar:
+        b64 = base64.b64encode(st.session_state.avatar).decode()
+        return f"data:image/png;base64,{b64}"
+    # Otherwise, return an indestructible SVG data string of a user icon
+    default_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a0aec0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>'
+    b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
+    return f"data:image/svg+xml;base64,{b64_svg}"
+
 # --- 6. UI VIEWS ---
 if nav == "League":
     st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
     if not master_df.empty:
-        # Aggregating base stats
+        # 1. Base aggregations
         lb = master_df.groupby('GM').agg({'GP': 'sum', 'Pts': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
         
-        # Calculating Active Players (excluding eliminated teams automatically)
+        # 2. Calculate Players Remaining
         active_mask = ~master_df['Team'].isin(ELIMINATED_TEAMS)
         active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
         lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
         lb['Players Remaining'] = lb['Players Remaining'].astype(int)
         
-        # Sorting and calculating Points Back
+        # 3. Sort and calculate Points Back
         lb = lb.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
         max_pts = lb['Pts'].max() if not lb.empty else 0
         lb['Pts Back'] = max_pts - lb['Pts']
         
-        # Adding empty placeholders
+        # 4. Add placeholders and format columns
         lb['Pts Yesterday'] = 0  
-        lb[''] = '👤' # Native Avatar Column Placeholder
         
-        # Renaming and Ordering final columns explicitly
+        # Convert GM name to Image URI for the Avatar column
+        lb[''] = lb['GM'].apply(get_avatar_uri) 
+        
+        # Rename and Order
         lb = lb.rename(columns={'GM': 'Name', 'Pts': 'Points'})
         lb_final = lb[['', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
         
-        st.dataframe(lb_final, hide_index=True, use_container_width=True)
+        # Display using column_config to render the image properly
+        st.dataframe(
+            lb_final, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "": st.column_config.ImageColumn(" ", help="Avatar")
+            }
+        )
 
 else:
-    default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
-    selected_gm = st.selectbox("View Another Team", gms, index=default_idx)
+    # Dropdown uses the updated display names list
+    default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
+    selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
     st.subheader(f"Roster for {selected_gm}")
     st.caption("* **Bold** indicates playing today. _Red Strikethrough_ indicates eliminated.")
     if not master_df.empty:
@@ -213,7 +243,6 @@ else:
         
         def style_eliminated(row):
             if row['Team'] in ELIMINATED_TEAMS: 
-                # Same Maple Leafs blue: #0068c9
                 return ['background-color: #e6f0fa; color: #0068c9; text-decoration: line-through;'] * len(row)
             return [''] * len(row)
             
