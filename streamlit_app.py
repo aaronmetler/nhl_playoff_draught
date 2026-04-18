@@ -10,7 +10,7 @@ import os
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS: EXTREME PADDING REDUCTION & ANIMATIONS ---
+# --- CUSTOM CSS: EXTREME PADDING REDUCTION, ANIMATIONS & KPI CENTERING ---
 st.markdown("""
     <style>
         .block-container {
@@ -21,13 +21,15 @@ st.markdown("""
             margin-top: 0.5em;
             margin-bottom: 0.5em;
         }
+        
+        /* Roast Box CSS - Reduced Padding and Height */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
             border-radius: 0.5rem;
-            padding: 1rem;
+            padding: 0.5rem 1rem; /* Shrunk from 1rem */
             position: relative;
-            min-height: 80px;
+            min-height: 40px; /* Shrunk from 80px */
             display: flex;
             align-items: center;
             margin-bottom: 1rem;
@@ -48,6 +50,7 @@ st.markdown("""
             100% { opacity: 1; visibility: visible; }
         }
         
+        /* Custom Team HTML Table CSS */
         .team-table {
             width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px;
         }
@@ -414,12 +417,8 @@ def get_avatar_uri(gm_check_name):
     b64_svg = base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')
     return f"data:image/svg+xml;base64,{b64_svg}"
 
-# --- PREPARE CUSTOM ACTIVE ICON ---
-active_b64 = ""
-if os.path.exists("active.png"):
-    with open("active.png", "rb") as f:
-        active_b64 = base64.b64encode(f.read()).decode()
-active_img_html = f"<img src='data:image/png;base64,{active_b64}' width='16' title='Active Today' style='vertical-align: middle; margin-left: 4px;'>" if active_b64 else "<span title='Active Today' style='margin-left: 4px;'>🏒</span>"
+# Use a text emoji instead of the custom active.png to simplify
+active_img_html = "<span title='Active Today' style='margin-left: 4px;'>🔥</span>"
 
 # --- 6. UI VIEWS ---
 LEAFS_ROASTS = [
@@ -507,7 +506,7 @@ else:
     st.markdown(f"""
         <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px; line-height: 1.6;'>
             ➤ {active_img_html} indicates playing today<br>
-            ➤ <span style="text-decoration: line-through;">Strikethrough</span> indicates eliminated
+            ➤ <span style="text-decoration: line-through;">Strikethrough</span> indicates player is eliminated
         </p>
     """, unsafe_allow_html=True)
     
@@ -528,8 +527,8 @@ else:
             is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
             is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
             
-            bg = "transparent" # No background color for eliminated players
-            color = "inherit"  # No specific text color
+            bg = "transparent" 
+            color = "inherit"  
             text_decor = "line-through" if is_elim else "none"
             
             p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Player_Name']}</a>"
@@ -540,7 +539,7 @@ else:
             # Active Icon
             active_indicator = f" {active_img_html}" if is_playing else ""
             
-            # Combine Player Link + News + Active Indicator
+            # Combine Player Link + News + Active Indicator (No Bolding)
             player_cell = f"{p_link} {news_link}{active_indicator}"
             
             t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor};'>{r['Team_Raw']}</a>"
