@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 import random
 import datetime
-import plotly.express as px
 import extra_streamlit_components as stx
 
 # --- 1. CONFIG & SESSION INITIALIZATION ---
@@ -36,10 +35,9 @@ USER_DB = {
 SHARED_PWD = "playoffs2026"
 
 def is_authenticated():
-    # Instant session check
     if st.session_state.authenticated:
         return True
-    # Persistent cookie check
+    
     saved_email = cookie_manager.get('user_email_cookie')
     if saved_email and saved_email in USER_DB:
         st.session_state.authenticated = True
@@ -49,8 +47,8 @@ def is_authenticated():
 
 # --- LOGIN SCREEN ---
 if not is_authenticated():
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
         st.title("🏒 Playoff Pool Login")
         with st.form("login_form"):
             email = st.text_input("Email").lower().strip()
@@ -72,29 +70,25 @@ if not is_authenticated():
 # ==========================================
 
 # --- TOP RIGHT USER PROFILE ---
-# We use a large empty column on the left to push everything to the right edge.
-spacer, content = st.columns([7, 3])
+spacer, t_name, t_img, t_out = st.columns([7, 1.5, 0.5, 1])
 
-with content:
-    # Nested columns to force the text, avatar, and button onto one tight line
-    c_text, c_img, c_btn = st.columns([2, 0.5, 1], vertical_alignment="center")
-    
-    with c_text:
-        st.markdown(f"<div style='text-align: right; font-size: 18px;'>Welcome {st.session_state.gm_name}</div>", unsafe_allow_html=True)
-    
-    with c_img:
-        if st.session_state.avatar:
-            st.image(st.session_state.avatar, width=40)
-        else:
-            st.markdown("<div style='font-size: 24px; text-align: left;'>👤</div>", unsafe_allow_html=True)
-            
-    with c_btn:
-        if st.button("Log Out", use_container_width=True):
-            cookie_manager.delete('user_email_cookie')
-            st.session_state.authenticated = False
-            st.session_state.gm_name = None
-            st.session_state.avatar = None
-            st.rerun()
+with t_name:
+    st.write("") # Tiny spacer to push text down to align with image
+    st.markdown(f"<div style='text-align: right'>Welcome, <b>{st.session_state.gm_name}</b></div>", unsafe_allow_html=True)
+
+with t_img:
+    if st.session_state.avatar:
+        st.image(st.session_state.avatar, width=35)
+    else:
+        st.markdown("<div style='font-size: 20px;'>👤</div>", unsafe_allow_html=True)
+
+with t_out:
+    if st.button("Log Out", use_container_width=True):
+        cookie_manager.delete('user_email_cookie')
+        st.session_state.authenticated = False
+        st.session_state.gm_name = None
+        st.session_state.avatar = None
+        st.rerun()
 
 st.divider()
 
@@ -109,11 +103,93 @@ def fetch_live_data():
             stats_df = pd.DataFrame(resp.json().get('data', []))
             if not stats_df.empty:
                 stats_df['totalPoints'] = stats_df['goals'] + stats_df['assists']
-                return stats_df, []
+                return stats_df
     except:
         pass
-    return pd.DataFrame(), []
+    return pd.DataFrame()
 
 def clean_and_match(player_str, stats_df):
     if pd.isna(player_str) or str(player_str).strip() == '': return None
-    clean_p = str(player_str).replace('-', ' ').lower
+    clean_p = str(player_str).replace('-', ' ').lower()
+    team_map = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}
+    
+    if stats_df.empty:
+        return {'lastName': str(player_str).split('-')[0].strip(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
+
+    parts = clean_p.split()
+    team_part = team_map.get(parts[-1].upper(), parts[-1].upper())
+    name_part = parts[0].replace('ü', 'u')
+    if "." in name_part: name_part = parts[1] if len(parts) > 1 else name_part
+
+    match = stats_df[(stats_df['lastName'].str.lower().str.contains(name_part)) & 
+                     (stats_df['teamAbbrev'] == team_part)]
+    
+    return match.iloc[0].to_dict() if not match.empty else None
+
+stats = fetch_live_data()
+
+# Safe CSV Loading
+try:
+    df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
+    if 'Draft Rounds' not in df_raw.columns:
+        df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv", skiprows=1)
+    gms = [col for col in df_raw.columns if col in USER_DB.values()]
+except:
+    st.error("Missing or invalid CSV file: Ensure '2026 NHL Draught - Sheet1.csv' is uploaded to GitHub.")
+    st.stop()
+
+master_list = []
+for index, row in df_raw.iterrows():
+    round_name = str(row.get('Draft Rounds', ''))
+    if "Round" not in round_name: continue
+    
+    for gm in gms:
+        pick_str = row.get(gm, '')
+        p_data = clean_and_match(pick_str, stats)
+        
+        if p_data is None:
+            p_data = {'lastName': pick_str, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0}
+            
+        master_list.append({
+            'GM': gm, 'Player': p_data['lastName'], 'Pts': p_data.get('totalPoints', 0), 
+            'G': p_data.get('goals', 0), 'A': p_data.get('assists', 0), 'GP': p_data.get('gamesPlayed', 0), 'Round': round_name
+        })
+
+master_df = pd.DataFrame(master_list)
+
+# --- 5. NAVIGATION & UI VIEWS ---
+nav = st.radio("Navigation", ["League", "My Team"], horizontal=True, label_visibility="collapsed")
+st.write("") # Tiny spacer
+
+if nav == "League":
+    st.title("🏆 League Standings")
+    st.info("Toronto Maple Leafs Update: Currently scheduling tee times for May.")
+    
+    if not master_df.empty:
+        leaderboard = master_df.groupby('GM').agg({'Pts': 'sum', 'G': 'sum'}).reset_index()
+        leaderboard = leaderboard.sort_values(by=['Pts', 'G'], ascending=False).reset_index(drop=True)
+        leaderboard.index += 1
+        st.dataframe(leaderboard, use_container_width=True)
+
+else:
+    st.title("🏒 My Team")
+    
+    # Safe Avatar Upload Expander (replaces the modal)
+    with st.expander("👤 Add/Change My Avatar"):
+        file = st.file_uploader("Select a square image", type=["jpg", "png", "jpeg"])
+        if st.button("Save Avatar"):
+            if file:
+                st.session_state.avatar = file.getvalue()
+                st.success("Avatar saved!")
+                st.rerun()
+    
+    # Dropdown defaults to logged-in user
+    default_idx = gms.index(st.session_state.gm_name) if st.session_state.gm_name in gms else 0
+    selected_gm = st.selectbox("View Another Team", gms, index=default_idx)
+    
+    st.subheader(f"Roster for {selected_gm}")
+    st.caption("* **Bold** indicates playing today. _Italics_ indicates eliminated.")
+    
+    if not master_df.empty:
+        my_team = master_df[master_df['GM'] == selected_gm]
+        st.table(my_team[['Round', 'Player', 'GP', 'G', 'A', 'Pts']])
