@@ -362,3 +362,89 @@ if nav == "League":
     leafs_quote = LEAFS_ROASTS[datetime.datetime.now().day % len(LEAFS_ROASTS)]
     worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
     st.markdown(f"""
+        <div class="roast-container">
+            <div class="quote-1">🍁 <b>{leafs_quote}</b></div>
+            <div class="quote-2">🚨 <b>{worst_gm_quote}</b></div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    if not master_df.empty:
+        lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
+        
+        active_mask = ~master_df['Team_Raw'].isin(ELIMINATED_TEAMS)
+        active_counts = master_df[active_mask].groupby('GM').size().reset_index(name='Players Remaining')
+        lb = pd.merge(lb, active_counts, on='GM', how='left').fillna(0)
+        lb['Players Remaining'] = lb['Players Remaining'].astype(int)
+        
+        lb = lb.sort_values(by=['Points', 'G'], ascending=False).reset_index(drop=True)
+        lb['Rank'] = (lb.index + 1).astype(str) 
+        
+        max_pts = lb['Points'].max() if not lb.empty else 0
+        lb['Pts Back'] = max_pts - lb['Points']
+        
+        def add_trophy(row):
+            if row['Rank'] == '1': return f"🏆 {row['GM']}"
+            elif row['Rank'] == '2': return f"🥈 {row['GM']}"
+            return row['GM']
+            
+        lb['Name'] = lb.apply(add_trophy, axis=1)
+        
+        lb['Pts Yesterday'] = 0  
+        lb[''] = lb['GM'].apply(get_avatar_uri) 
+        
+        lb_final = lb[['Rank', '', 'Name', 'GP', 'Points', 'G', 'A', 'Pts Yesterday', 'Pts Back', 'Players Remaining']]
+        
+        st.dataframe(
+            lb_final, 
+            hide_index=True, 
+            use_container_width=True,
+            column_config={
+                "Rank": st.column_config.TextColumn("Rank", width="small"),
+                "": st.column_config.ImageColumn(" ", help="Avatar", width="small")
+            }
+        )
+
+else:
+    default_idx = display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0
+    selected_gm = st.selectbox("View Another Team", display_gms, index=default_idx)
+    
+    # Static GM-Specific Roast Box
+    my_team_df = master_df[master_df['GM'] == selected_gm] if not master_df.empty else pd.DataFrame()
+    gm_specific_roast = get_team_roast(selected_gm, my_team_df, DAILY_HEADLINE)
+    st.markdown(f"""
+        <div class="roast-container" style="animation: none;">
+            <div style="color: #0068c9; font-size: 1rem;">🔥 <b>{gm_specific_roast}</b></div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <p style='font-size: 0.85rem; color: #888; margin-bottom: 10px; line-height: 1.6;'>
+            ➤ <b>Bold</b> indicates playing today<br>
+            ➤ <span style="color: #0068c9; text-decoration: line-through;">Blue Strikethrough</span> indicates eliminated
+        </p>
+    """, unsafe_allow_html=True)
+    
+    if not master_df.empty:
+        # Construct Custom HTML Table
+        html = "<table class='team-table'>"
+        html += "<tr><th>Round</th><th>Player</th><th>Team</th><th>Position</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>P/PG</th><th>Rank</th></tr>"
+        
+        for _, r in my_team_df.iterrows():
+            is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
+            is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
+            
+            bg = "rgba(0, 104, 201, 0.08)" if is_elim else "transparent"
+            color = "#0068c9" if is_elim else "inherit"
+            text_decor = "line-through" if is_elim else "none"
+            weight = "bold" if is_playing else "normal"
+            
+            p_link = f"<a href='{r['Player_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Player_Name']}</a>"
+            t_link = f"<a href='{r['Team_URL']}' target='_blank' style='color: {color}; text-decoration: {text_decor}; font-weight: {weight};'>{r['Team_Raw']}</a>"
+            
+            html += f"<tr style='background-color: {bg}; color: {color};'>"
+            html += f"<td>{r['Round']}</td><td>{p_link}</td><td>{t_link}</td><td>{r['Position']}</td>"
+            html += f"<td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td>"
+            html += f"<td>{r['P/PG']}</td><td>{r['Rank by Round']}</td></tr>"
+            
+        html += "</table>"
+        st.markdown(html, unsafe_allow_html=True)
