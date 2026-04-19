@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
+from zoneinfo import ZoneInfo
 import base64
 import extra_streamlit_components as stx
 import xml.etree.ElementTree as ET
@@ -84,13 +85,15 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Cookie Manager with Unique Key to prevent Streamlit Duplicate Element errors
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'avatar' not in st.session_state: st.session_state.avatar = None
+
+# --- TIMEZONE SETUP ---
+PT_ZONE = ZoneInfo("America/Los_Angeles")
 
 # --- 2. AUTHENTICATION LOGIC ---
 USER_DB = {
@@ -113,7 +116,6 @@ TEAM_URLS = {
     'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'
 }
 
-# Anti-Bot Header to bypass Cloudflare
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -284,7 +286,7 @@ def fetch_live_data():
 
 @st.cache_data(ttl=3600)
 def get_historical_points(player_ids, days):
-    cutoff_date = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    cutoff_date = (datetime.datetime.now(PT_ZONE) - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     hist_pts = {}
     for pid in player_ids:
         if not pid: 
@@ -333,7 +335,7 @@ def get_teams_playing_today():
         if res.status_code == 200:
             data = res.json()
             teams = set()
-            today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            today_str = datetime.datetime.now(PT_ZONE).strftime("%Y-%m-%d")
             for day in data.get('gameWeek', []):
                 if day.get('date') == today_str:
                     for game in day.get('games', []):
@@ -367,7 +369,8 @@ def get_worst_gm_roast(master_df, headline):
         f"📰 \"{headline}\" — Sadly, none of this helps {worst_gm}'s roster, which is participating in an active point-scoring boycott.",
         f"📰 \"{headline}\" — In unrelated news, {worst_gm}'s team continues to be an absolute dumpster fire."
     ]
-    return roasts[datetime.datetime.now().day % len(roasts)]
+    current_day = datetime.datetime.now(PT_ZONE).day
+    return roasts[current_day % len(roasts)]
 
 def get_team_roast(selected_gm, my_team_df, headline):
     if my_team_df.empty: return "Where is your team?"
@@ -558,8 +561,10 @@ LEAFS_ROASTS = [
 ]
 
 if nav == "League":
-    leafs_quote = LEAFS_ROASTS[datetime.datetime.now().day % len(LEAFS_ROASTS)]
+    current_day = datetime.datetime.now(PT_ZONE).day
+    leafs_quote = LEAFS_ROASTS[current_day % len(LEAFS_ROASTS)]
     worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
+    
     st.markdown(f"""
         <div class="roast-container">
             <div class="quote-1">🍁 <b>{leafs_quote}</b></div>
