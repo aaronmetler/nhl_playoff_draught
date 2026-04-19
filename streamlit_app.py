@@ -14,14 +14,12 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
+if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
 
-# We use a proxy variable for navigation to avoid widget key conflicts
-if 'proxy_nav' not in st.session_state: st.session_state.proxy_nav = 'League'
-
-# Handle URL Navigation (This is the safe way to programmatically navigate)
+# Handle URL Navigation (from League Table buttons)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.proxy_nav = "My Team"
+        st.session_state.nav_state = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
@@ -250,10 +248,10 @@ try:
     gms = sorted(master_df['GM'].unique().tolist())
 
 except Exception as e:
-    st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
+    st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -262,13 +260,13 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# --- SAFE NAVIGATION SYSTEM ---
-# The segmented control sets the proxy_nav. It no longer holds the 'nav_state' key.
-selected_tab = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.proxy_nav, label_visibility="collapsed")
-if selected_tab:
-    st.session_state.proxy_nav = selected_tab
+# Smooth Navigation
+nav_selection = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
+if nav_selection and nav_selection != st.session_state.nav_state:
+    st.session_state.nav_state = nav_selection
+    st.rerun()
 
-nav = st.session_state.proxy_nav
+nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
 if nav == "League":
@@ -287,13 +285,10 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Instead of modifying state, redirect via URL parameter. 
-            # This completely avoids the StreamlitAPIException.
-            st.markdown(f"""
-                <div style='display: flex; align-items: center; height: 40px;'>
-                    <a href='?nav=team&gm={urllib.parse.quote(r['GM'])}' target='_self' style='color:#0068c9; text-decoration:none; font-weight:600;'>{r['GM']}</a>
-                </div>
-            """, unsafe_allow_html=True)
+            if st.button(r['GM'], key=f"nav_{r['GM']}"):
+                st.session_state.sel_gm_val = r['GM']
+                st.session_state.nav_state = "My Team"
+                st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
         b_cols[4].markdown(f"<div class='cell-text plain-text'>{r['G']}</div>", unsafe_allow_html=True)
@@ -367,21 +362,13 @@ elif nav == "All Rosters":
     
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
-        # Same safe navigation method using URL parameters for the dropdown
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
-            st.markdown(f"<meta http-equiv='refresh' content='0; url=?nav=team&gm={urllib.parse.quote(jump_gm)}'>", unsafe_allow_html=True)
-            st.stop()
+            st.session_state.sel_gm_val = jump_gm
+            st.session_state.nav_state = "My Team"
+            st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
-    
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
-    st.markdown(f"""
-        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
-        </div>
-    """, unsafe_allow_html=True)
     
     total_df = master_df.copy()
     if horizon != 'All Time':
@@ -393,8 +380,22 @@ elif nav == "All Rosters":
         total_df['A'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
         total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
-    for g in gms:
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+    # Calculate grouped totals and sort GM lists dynamically
+    gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
+    sorted_gms = gm_totals['GM'].tolist()
+    
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in sorted_gms])
+    st.markdown(f"""
+        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    for g in sorted_gms:
+        gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
+        
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
