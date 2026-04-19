@@ -5,6 +5,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import base64
 import extra_streamlit_components as stx
+import difflib
 import os
 
 # Try to import Gemini, handle gracefully if missing or secret not set
@@ -30,7 +31,7 @@ st.markdown("""
             margin-bottom: 0.5em;
         }
         
-        /* Roast Box CSS - Reduced Padding and Height */
+        /* Roast Box CSS */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -352,8 +353,8 @@ def get_teams_playing_today():
     except: pass
     return []
 
-# --- AI ROAST GENERATOR ---
-@st.cache_data(ttl=3600*12) 
+# --- AI ROAST GENERATOR (TTL lowered to 15 mins for better variation) ---
+@st.cache_data(ttl=900) 
 def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_type):
     fallback = f"Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
     if team_type == "leafs":
@@ -371,7 +372,7 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
             system_prompt = f"""
             You are a sarcastic hockey commentator. Write a 1-2 sentence roast about the Toronto Maple Leafs.
             The GMs in this pool have drafted Leafs players who have combined for {pts} points. 
-            Casually mention that it has been {days_since} days since they last won the cup in 1967.
+            Casually mention that it has been exactly {days_since} days since they last won the cup in 1967.
             Channel current public sentiment and hockey fan consensus about the Leafs' playoff struggles to make the roast hit harder.
             Do not include any news headlines.
             """
@@ -395,6 +396,7 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
             """
 
         response = model.generate_content(system_prompt)
+        # We removed the fire emoji here as requested!
         return response.text.replace('\n', ' ').strip()
         
     except Exception:
@@ -413,33 +415,50 @@ except:
     st.error("Missing or invalid CSV file.")
     st.stop()
 
+# --- NEW FUZZY MATCHING ENGINE ---
 def clean_and_match(pick_str, stats_df):
     if pd.isna(pick_str) or str(pick_str).strip() == '': return None
     
     parts = str(pick_str).split('-')
-    name_str = parts[0].strip().replace('ü', 'u')
+    raw_name = parts[0].strip()
+    name_str = raw_name.replace('ü', 'u').lower()
     t_part = parts[1].strip().upper() if len(parts) > 1 else ""
     
-    team_map = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}
+    team_map = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH', 'NJ': 'NJD', 'SJ': 'SJS', 'LA': 'LAK'}
     t_part = team_map.get(t_part, t_part)
     
-    name_tokens = name_str.split()
-    n_part = name_tokens[-1].lower() if name_tokens else ""
-    
     if stats_df.empty:
-        return {'lastName': n_part, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': name_str.title()}
+        return {'lastName': '', 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': raw_name.title()}
     
+    # 1. Filter by Team First (if team was provided)
     if t_part:
-        match = stats_df[(stats_df['lastName'].str.contains(n_part, case=False, na=False)) & (stats_df['teamAbbrev'].str.contains(t_part, case=False, na=False))]
+        team_df = stats_df[stats_df['teamAbbrev'] == t_part]
     else:
-        match = pd.DataFrame()
+        team_df = stats_df
         
-    if not match.empty: return match.iloc[0].to_dict()
+    if not team_df.empty:
+        # 2. Fuzzy match against the full name on that specific team
+        all_team_names = team_df['playerName'].tolist()
+        all_team_names_lower = [n.lower() for n in all_team_names]
+        matches = difflib.get_close_matches(name_str, all_team_names_lower, n=1, cutoff=0.5)
+        
+        if matches:
+            best_match = matches[0]
+            matched_row = team_df[team_df['playerName'].str.lower() == best_match].iloc[0]
+            return matched_row.to_dict()
+
+    # 3. If team fuzzy match failed (e.g. traded player, wrong team typed), fuzzy match against ENTIRE NHL
+    all_global_names = stats_df['playerName'].tolist()
+    all_global_names_lower = [n.lower() for n in all_global_names]
+    global_matches = difflib.get_close_matches(name_str, all_global_names_lower, n=1, cutoff=0.65)
     
-    match_name_only = stats_df[stats_df['lastName'].str.contains(n_part, case=False, na=False)]
-    if not match_name_only.empty: return match_name_only.iloc[0].to_dict()
+    if global_matches:
+        best_match = global_matches[0]
+        matched_row = stats_df[stats_df['playerName'].str.lower() == best_match].iloc[0]
+        return matched_row.to_dict()
     
-    return {'lastName': n_part, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': name_str.title()}
+    # 4. Ultimate fallback (Player completely missing from NHL database)
+    return {'lastName': '', 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': raw_name.title()}
 
 master_list = []
 for index, row in df_raw.iterrows():
@@ -461,14 +480,6 @@ for index, row in df_raw.iterrows():
         p_id = p_data.get('playerId')
         pos = p_data.get('positionCode', '')
         
-        if not p_id or not pos:
-            search_name = pick_str.split('-')[0].strip().replace('ü','u').lower()
-            for full_name, info in roster_dict.items():
-                if search_name in full_name or full_name in search_name:
-                    p_id = p_id or info['id']
-                    pos = pos or info['pos']
-                    break
-        
         player_url = f"https://www.nhl.com/player/{p_id}" if p_id else f"https://www.google.com/search?q=NHL+{p_name.replace(' ', '+')}"
         t_abbrev = p_data.get('teamAbbrev', pick_str.split()[-1].upper() if '-' in pick_str else "")
         t_url = f"https://www.nhl.com/{TEAM_URLS.get(t_abbrev, 'standings')}" if t_abbrev else "https://www.nhl.com"
@@ -476,7 +487,7 @@ for index, row in df_raw.iterrows():
         master_list.append({
             'GM': gm, 
             'Player_Id': p_id,
-            'Player_Name': p_name,
+            'Player_Name': p_name.title(),
             'Player_URL': player_url,
             'Team_Raw': t_abbrev,
             'Team_URL': t_url,
