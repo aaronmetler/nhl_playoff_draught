@@ -8,6 +8,14 @@ import extra_streamlit_components as stx
 import xml.etree.ElementTree as ET
 import os
 
+# Try to import Gemini, handle gracefully if missing or secret not set
+try:
+    import google.generativeai as genai
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    GEMINI_READY = True
+except Exception:
+    GEMINI_READY = False
+
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
@@ -23,7 +31,7 @@ st.markdown("""
             margin-bottom: 0.5em;
         }
         
-        /* Roast Box CSS */
+        /* Roast Box CSS - Reduced Padding and Height */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -216,6 +224,7 @@ def get_roster_dictionary():
             res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current", headers=HEADERS, timeout=10)
             if res.status_code == 200:
                 data = res.json()
+                # Strictly skaters
                 for group in ['forwards', 'defensemen']:
                     for p in data.get(group, []):
                         name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
@@ -357,34 +366,53 @@ def get_daily_headline():
     except: pass
     return headline
 
-def get_worst_gm_roast(master_df, headline):
-    if master_df.empty: return f"**NHL News:** {headline}. Meanwhile, everyone here is tied at 0 points."
-    lb = master_df.groupby('GM').agg({'Points': 'sum'}).reset_index()
-    lb = lb.sort_values('Points', ascending=True)
-    worst_gm, worst_pts = lb.iloc[0]['GM'], lb.iloc[0]['Points']
-    
-    roasts = [
-        f"📰 \"{headline}\" — Meanwhile, {worst_gm} is completely oblivious, sitting in last place with a pathetic {worst_pts} points.",
-        f"📰 \"{headline}\" — A major story, unless you are {worst_gm}, whose team is currently a bigger disaster at {worst_pts} points.",
-        f"📰 \"{headline}\" — Sadly, none of this helps {worst_gm}'s roster, which is participating in an active point-scoring boycott.",
-        f"📰 \"{headline}\" — In unrelated news, {worst_gm}'s team continues to be an absolute dumpster fire."
-    ]
-    current_day = datetime.datetime.now(PT_ZONE).day
-    return roasts[current_day % len(roasts)]
+# --- AI ROAST GENERATOR ---
+@st.cache_data(ttl=3600*12) 
+def generate_ai_roast(gm_name, pts, active_players, eliminated_players, headline, team_type):
+    # Fallback algorithmic roast
+    fallback = f"📰 \"{headline}\" — Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
+    if team_type == "leafs":
+        days_since = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
+        fallback = f"🍁 Toronto Tracker: \"{headline}\" — GMs have squeezed {pts} points out of the Leafs. {days_since} days since 1967."
 
-def get_team_roast(selected_gm, my_team_df, headline):
-    if my_team_df.empty: return "Where is your team?"
-    pts = my_team_df['Points'].sum()
-    eliminated = my_team_df[my_team_df['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0]
-    
-    if pts == 0:
-        return f"📰 \"{headline}\" — None of this matters to {selected_gm}, whose entire roster is currently invisible (0 points)."
-    elif eliminated >= 4:
-        return f"📰 \"{headline}\" — Fun fact: Half of {selected_gm}'s roster is already golfing while generating a mediocre {pts} points."
-    elif pts < 15:
-        return f"📰 \"{headline}\" — Also, {selected_gm} is struggling to remain relevant with a sad {pts} points."
-    else:
-        return f"📰 \"{headline}\" — {selected_gm} is scraping together {pts} points, but we all know it won't last."
+    if not GEMINI_READY:
+        return "🔥 " + fallback
+
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        if team_type == "leafs":
+            days_since = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
+            system_prompt = f"""
+            You are a sarcastic hockey commentator. Write a 1-2 sentence roast about the Toronto Maple Leafs.
+            The GMs in this pool have drafted Leafs players who have combined for {pts} points. 
+            Mention the current NHL headline: "{headline}".
+            Also casually mention that it has been {days_since} days since they last won the cup in 1967.
+            """
+        else:
+            system_prompt = f"""
+            You are a sarcastic, witty, and ruthless hockey commentator hosting a fantasy playoff pool.
+            Write a 1-2 sentence roast about the fantasy GM named {gm_name}.
+            
+            Here are their current stats:
+            - Total Points: {pts}
+            - Active Players Left: {active_players}
+            - Eliminated Players: {eliminated_players}
+            
+            Incorporate this real NHL headline into the joke: "{headline}"
+            
+            Rules:
+            - Be funny and sarcastic, but not overly offensive or profane.
+            - If they have 0 points or lots of eliminated players, show no mercy.
+            - If they are doing well (high points), sarcastically imply they are getting lucky.
+            - Keep it brief (max 2 sentences).
+            """
+
+        response = model.generate_content(system_prompt)
+        return "🔥 " + response.text.replace('\n', ' ').strip()
+        
+    except Exception:
+        return "🔥 " + fallback
 
 roster_dict = get_roster_dictionary()
 stats = fetch_live_data()
@@ -553,25 +581,8 @@ def generate_league_html(lb_df):
     return html
 
 # --- 6. UI VIEWS ---
-LEAFS_ROASTS = [
-    "Toronto Maple Leafs Update: Currently scheduling tee times for May.",
-    "Toronto Maple Leafs Update: Planning the Stanley Cup parade... for the Marlies.",
-    "Toronto Maple Leafs Update: Local golf courses report surge in tee time bookings from Scotiabank Arena.",
-    "Toronto Maple Leafs Update: 1967 was a great year. Too bad it's 2026."
-]
-
 if nav == "League":
-    current_day = datetime.datetime.now(PT_ZONE).day
-    leafs_quote = LEAFS_ROASTS[current_day % len(LEAFS_ROASTS)]
-    worst_gm_quote = get_worst_gm_roast(master_df, DAILY_HEADLINE)
     
-    st.markdown(f"""
-        <div class="roast-container">
-            <div class="quote-1">🍁 <b>{leafs_quote}</b></div>
-            <div class="quote-2">🚨 <b>{worst_gm_quote}</b></div>
-        </div>
-    """, unsafe_allow_html=True)
-
     if not master_df.empty:
         lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index()
         
@@ -595,6 +606,27 @@ if nav == "League":
         lb['Pts Yesterday'] = 0  
         lb['Avatar'] = lb['GM'].apply(get_avatar_uri) 
         
+        worst_gm_row = lb.iloc[-1]
+        
+        leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum() if 'TOR' in master_df['Team_Raw'].values else 0
+        leafs_dynamic_quote = generate_ai_roast("Toronto", leafs_pts, 0, 0, DAILY_HEADLINE, "leafs")
+        
+        worst_gm_quote = generate_ai_roast(
+            worst_gm_row['GM'], 
+            worst_gm_row['Points'], 
+            worst_gm_row['Players Remaining'], 
+            10 - worst_gm_row['Players Remaining'], # Approximating drafted count
+            DAILY_HEADLINE, 
+            "normal"
+        )
+        
+        st.markdown(f"""
+            <div class="roast-container">
+                <div class="quote-1"><b>{leafs_dynamic_quote}</b></div>
+                <div class="quote-2"><b>{worst_gm_quote}</b></div>
+            </div>
+        """, unsafe_allow_html=True)
+        
         st.markdown(generate_league_html(lb), unsafe_allow_html=True)
 
 elif nav == "My Team":
@@ -602,10 +634,21 @@ elif nav == "My Team":
     selected_gm_temp = st.session_state.get('selected_gm_val', display_gms[default_idx])
     my_team_df_preview = master_df[master_df['GM'] == selected_gm_temp] if not master_df.empty else pd.DataFrame()
     
-    gm_specific_roast = get_team_roast(selected_gm_temp, my_team_df_preview, DAILY_HEADLINE)
+    alive_count_preview = my_team_df_preview[~my_team_df_preview['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team_df_preview.empty else 0
+    elim_count_preview = len(my_team_df_preview) - alive_count_preview if not my_team_df_preview.empty else 0
+    
+    gm_specific_roast = generate_ai_roast(
+        selected_gm_temp, 
+        my_team_df_preview['Points'].sum() if not my_team_df_preview.empty else 0, 
+        alive_count_preview, 
+        elim_count_preview, 
+        DAILY_HEADLINE, 
+        "normal"
+    )
+    
     st.markdown(f"""
         <div class="roast-container" style="animation: none;">
-            <div style="color: #0068c9; font-size: 1rem;">🔥 <b>{gm_specific_roast}</b></div>
+            <div style="color: #0068c9; font-size: 1rem;"><b>{gm_specific_roast}</b></div>
         </div>
     """, unsafe_allow_html=True)
 
