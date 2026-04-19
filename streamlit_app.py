@@ -14,7 +14,7 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'avatar' not in st.session_state: st.session_state.avatar = None
-if 'nav_to_gm' not in st.session_state: st.session_state.nav_to_gm = None
+if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -52,9 +52,24 @@ st.markdown("""
         .team-table th { border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 8px; }
         .team-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
         .team-table td.text-left, .team-table th.text-left { text-align: left; }
-        .team-table a { text-decoration: none; color: #0068c9; font-weight: 500; }
-        .team-table a:hover { text-decoration: underline; }
+        
+        /* KPI Styling */
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
+        
+        /* Make the buttons in the table look like links */
+        div.stButton > button {
+            border: none;
+            background: none;
+            padding: 0;
+            color: #0068c9;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        div.stButton > button:hover {
+            text-decoration: underline;
+            background: none;
+            color: #004c99;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -186,11 +201,6 @@ def get_dynamic_roast(leader_name, pts_lead, worst_name, pts_worst):
         f"🚨 With only {pts_worst} points, {worst_name} is currently scouting for the 2027 draft.",
         f"🚨 {worst_name} has {pts_worst} points. Watching the scoreboard must feel like a horror movie.",
     ]
-    general_bank = [
-        "🩹 Fantasy Playoff Tip: It's only a choke if you expected your players to be good.",
-        "🩹 Half the pool is currently calculating 'mathematical paths' to victory that don't exist.",
-        "🩹 Reminder: Points Today only count if you're not already 50 points back.",
-    ]
     return random.choice(leader_bank), random.choice(basement_bank)
 
 # --- 6. UI HELPERS ---
@@ -231,16 +241,8 @@ with t_menu:
 
 st.divider()
 
-# Navigation logic with jump-to-team capability
-if st.session_state.nav_to_gm:
-    current_nav = "My Team"
-    st.session_state.sel_gm_val = st.session_state.nav_to_gm
-    st.session_state.nav_to_gm = None
-else:
-    current_nav = st.session_state.get('nav_state', 'League')
-
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=current_nav, label_visibility="collapsed", key="main_nav_ctrl")
-st.session_state.nav_state = nav
+# Navigation logic
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed", key="main_nav_ctrl")
 
 # --- 8. DATA PROCESSING ---
 stats = fetch_live_data()
@@ -287,35 +289,34 @@ if nav == "League":
     lb['Rank'] = range(1, len(lb)+1)
     lb['Pts Back'] = lb['Points'].max() - lb['Points']
     
-    # Generate Roasts based on standings
+    # Roasts
     lead_q, base_q = get_dynamic_roast(lb.iloc[0]['GM'], lb.iloc[0]['Points'], lb.iloc[-1]['GM'], lb.iloc[-1]['Points'])
     st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{lead_q}</b></div><div class='quote-2'><b>{base_q}</b></div></div>", unsafe_allow_html=True)
 
-    # Manual Navigation Handler via URL-style Query Params or Button Logic hack
-    lb_html = "<table class='team-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>"
+    # Leaderboard Table with Navigation Buttons
+    st.markdown("<table class='team-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>", unsafe_allow_html=True)
     for _, r in lb.iterrows():
-        avatar = f"<img src='{get_avatar_uri(r['GM'])}' width='30' style='border-radius:50%; vertical-align: middle;'>"
-        
-        # GM Link logic: We use a button to handle navigation within Streamlit
-        lb_html += f"<tr><td>{r['Rank']}</td><td>{avatar}</td><td class='text-left'><a href='#' onclick='window.parent.postMessage({{type: \"gm_click\", name: \"{r['GM']}\"}}, \"*\"); return false;'>{r['GM']}</a></td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Pts Back']}</td><td>{int(r['Rem'])}</td></tr>"
-    
-    st.markdown(lb_html + "</table>", unsafe_allow_html=True)
-    
-    # Detect the GM click from the HTML table (Streamlit workaround)
-    gm_to_load = extra_streamlit_components.tab_bar(data=[extra_streamlit_components.TabBarItemData(id=g, title="", description="") for g in display_gms], default=None, key="gm_click_detect")
-    if gm_to_load:
-        st.session_state.nav_to_gm = gm_to_load
-        st.rerun()
+        c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([0.5, 0.5, 1.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0])
+        with c1: st.write(f"**{r['Rank']}**")
+        with c2: st.markdown(f"<img src='{get_avatar_uri(r['GM'])}' width='25' style='border-radius:50%;'>", unsafe_allow_html=True)
+        with c3:
+            if st.button(r['GM'], key=f"nav_{r['GM']}"):
+                st.session_state.sel_gm_val = r['GM']
+                st.session_state.main_nav_ctrl = "My Team" # Sets the nav for next run
+                st.rerun()
+        with c4: st.write(r['GP'])
+        with c5: st.write(f"**{r['Points']}**")
+        with c6: st.write(r['G'])
+        with c7: st.write(r['A'])
+        with c8: st.write(r['Pts Back'])
+        with c9: st.write(int(r['Rem']))
+    st.markdown("</table>", unsafe_allow_html=True)
 
 elif nav == "My Team":
-    current_gm = st.session_state.get('sel_gm_val', display_gms[0])
+    current_gm = st.session_state.get('sel_gm_val') or (st.session_state.display_name if st.session_state.display_name in display_gms else display_gms[0])
     my_preview = master_df[master_df['GM'] == current_gm]
-    q_gm_bank = [
-        f"🔥 {current_gm} is holding {my_preview['Points'].sum()} points. Is this the peak, or just the beginning of the end?",
-        f"🔥 {current_gm} has {len(my_preview[~my_preview['Team_Raw'].isin(ELIMINATED_TEAMS)])} players left. Use them wisely.",
-        f"🔥 Scouting report for {current_gm}: High effort, questionable results."
-    ]
-    st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>{random.choice(q_gm_bank)}</b></div>", unsafe_allow_html=True)
+    
+    st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>🔥 Scouting report for {current_gm}: High effort, questionable results.</b></div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
     with c1: 
@@ -340,6 +341,7 @@ elif nav == "My Team":
     st.markdown(generate_team_table_html(my_df, ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<p style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
     for g in display_gms:
         st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
         st.markdown(generate_team_table_html(master_df[master_df['GM'] == g], ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
