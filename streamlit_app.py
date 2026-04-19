@@ -12,21 +12,18 @@ import os
 # --- 1. CONFIG & SESSION INITIALIZATION ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# Attempt Gemini Connection with updated model string and safety logic
+# AI Setup
 try:
     import google.generativeai as genai
     if "GEMINI_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # Use 2.0 Flash for better stability and latest API features
-        model = genai.GenerativeModel('gemini-2.0-flash')
         GEMINI_READY = True
     else:
         GEMINI_READY = False
-except Exception as e:
+except Exception:
     GEMINI_READY = False
-    st.error(f"AI Connection Failed: {e}")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (Restored Layout Specs) ---
 st.markdown("""
     <style>
         .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
@@ -41,7 +38,6 @@ st.markdown("""
             display: flex;
             align-items: center;
             margin-bottom: 1rem;
-            margin-top: 5px;
         }
         .quote-1, .quote-2 {
             position: absolute;
@@ -52,13 +48,11 @@ st.markdown("""
         }
         .quote-1 { animation-delay: 0s; }
         .quote-2 { animation-delay: 10s; opacity: 0; }
-
         @keyframes fadeSwap {
             0%, 45% { opacity: 1; visibility: visible; }
             50%, 95% { opacity: 0; visibility: hidden; }
             100% { opacity: 1; visibility: visible; }
         }
-        
         .team-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-bottom: 2rem; }
         .team-table th { border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 8px; }
         .team-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
@@ -73,8 +67,10 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
+if 'avatar' not in st.session_state: st.session_state.avatar = None
 
 PT_ZONE = ZoneInfo("America/Los_Angeles")
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 2. AUTHENTICATION ---
 USER_DB = {
@@ -85,19 +81,7 @@ USER_DB = {
     "pgardner355@gmail.com": "Gardner", "aaronmetler@gmail.com": "Aaron"
 }
 SHARED_PWD = "playoffs2026"
-
-TEAM_URLS = {
-    'ANA': 'ducks', 'BOS': 'bruins', 'BUF': 'sabres', 'CGY': 'flames',
-    'CAR': 'hurricanes', 'CHI': 'blackhawks', 'COL': 'avalanche', 'CBJ': 'bluejackets',
-    'DAL': 'stars', 'DET': 'redwings', 'EDM': 'oilers', 'FLA': 'panthers',
-    'LAK': 'kings', 'MIN': 'wild', 'MTL': 'canadiens', 'NSH': 'predators',
-    'NJD': 'devils', 'NYI': 'islanders', 'NYR': 'rangers', 'OTT': 'senators',
-    'PHI': 'flyers', 'PIT': 'penguins', 'SJS': 'sharks', 'SEA': 'kraken',
-    'STL': 'blues', 'TBL': 'lightning', 'TOR': 'mapleleafs', 'UTA': 'utah',
-    'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'
-}
-
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+TEAM_URLS = { 'ANA': 'ducks', 'BOS': 'bruins', 'BUF': 'sabres', 'CGY': 'flames', 'CAR': 'hurricanes', 'CHI': 'blackhawks', 'COL': 'avalanche', 'CBJ': 'bluejackets', 'DAL': 'stars', 'DET': 'redwings', 'EDM': 'oilers', 'FLA': 'panthers', 'LAK': 'kings', 'MIN': 'wild', 'MTL': 'canadiens', 'NSH': 'predators', 'NJD': 'devils', 'NYI': 'islanders', 'NYR': 'rangers', 'OTT': 'senators', 'PHI': 'flyers', 'PIT': 'penguins', 'SJS': 'sharks', 'SEA': 'kraken', 'STL': 'blues', 'TBL': 'lightning', 'TOR': 'mapleleafs', 'UTA': 'utah', 'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'}
 
 def is_authenticated():
     if st.session_state.authenticated: return True
@@ -210,21 +194,58 @@ def get_teams_playing_today():
 # --- 4. AI ROAST LOGIC ---
 @st.cache_data(ttl=900) 
 def generate_ai_roast(gm_name, pts, elim, t_type, salt):
-    if not GEMINI_READY: return f"The pool is heating up! {gm_name} has {pts} points."
+    if not GEMINI_READY: return f"Meanwhile, {gm_name} has {pts} points."
     try:
         days = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
         if t_type == "leafs":
-            prompt = f"Write a brutal 1-sentence sarcastic roast about the Toronto Maple Leafs. Mention they have {pts} points in our pool and it has been exactly {days} days since their last Cup in 1967. Use public sentiment about their constant playoff failures."
+            prompt = f"Brutal 1-sentence sarcastic roast about Toronto Maple Leafs. Pool points: {pts}, {days} days since 1967. Use public sentiment."
         else:
-            prompt = f"Write a 1-sentence sarcastic hockey roast about fantasy GM {gm_name} who has {pts} points and {elim} eliminated players. Channel public sentiment about playoff failure and luck."
+            prompt = f"1-sentence sarcastic hockey roast about fantasy GM {gm_name} with {pts} points and {elim} eliminated players. Channel public sentiment."
         
-        # Call the updated model
         response = genai.GenerativeModel('gemini-2.0-flash').generate_content(prompt)
         return response.text.strip()
-    except Exception as e:
-        return f"Meanwhile, {gm_name} is trying their best with {pts} points."
+    except: return f"Meanwhile, {gm_name} is trying their best with {pts} points."
 
-# --- 5. DATA MATCHING ---
+# --- 5. UI HELPERS ---
+def get_avatar_uri(gm_check_name):
+    if gm_check_name == st.session_state.display_name and st.session_state.avatar:
+        b64 = base64.b64encode(st.session_state.avatar).decode()
+        return f"data:image/png;base64,{b64}"
+    default_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a0aec0"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>'
+    return f"data:image/svg+xml;base64,{base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')}"
+
+def generate_team_table_html(df):
+    h = "<table class='team-table'><tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Top Pick</th></tr>"
+    for _, r in df.iterrows():
+        is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
+        is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
+        decor = "line-through" if is_elim else "none"
+        active = " 🔥" if is_playing else ""
+        news = f"<a href='https://news.google.com/search?q={r['Player_Name']}+NHL+when:2d' target='_blank' title='Player News'>📄</a>"
+        h += f"<tr style='text-decoration: {decor};'><td>{r['Round']}</td><td class='text-left'>{r['Player_Name']} {news}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
+    return h + "</table>"
+
+# --- 6. MAIN APP HEADER ---
+t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
+with t_logo:
+    if os.path.exists("logo.png"): st.image("logo.png", width=55)
+with t_title: st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+with t_img:
+    if st.session_state.avatar: st.image(st.session_state.avatar, width=35)
+    else: st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -3px;'>👤</div>", unsafe_allow_html=True)
+with t_menu:
+    with st.popover("⚙️"):
+        new_disp = st.text_input("Display Name", value=st.session_state.display_name)
+        if st.button("Update"): st.session_state.display_name = new_disp; st.rerun()
+        file = st.file_uploader("Upload Avatar", type=["jpg", "png", "jpeg"])
+        if st.button("Save Avatar") and file: st.session_state.avatar = file.getvalue(); st.rerun()
+        if st.button("Log Out"): cookie_manager.delete('user_email_cookie'); st.session_state.authenticated = False; st.rerun()
+
+st.divider()
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed") or "League"
+
+# --- 7. DATA PROCESSING ---
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
 TEAMS_PLAYING_TODAY = get_teams_playing_today()
@@ -239,8 +260,6 @@ def clean_and_match(pick_str, stats_df):
     if pd.isna(pick_str) or str(pick_str).strip() == '': return None
     parts = str(pick_str).split('-'); raw_name = parts[0].strip(); t_part = parts[1].strip().upper() if len(parts) > 1 else ""
     t_part = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}.get(t_part, t_part)
-    
-    # Fuzzy Matching within specific team or global
     lookup_df = stats_df[stats_df['teamAbbrev'] == t_part] if not stats_df.empty and t_part else stats_df
     if not lookup_df.empty:
         matches = difflib.get_close_matches(raw_name.lower(), lookup_df['playerName'].str.lower().tolist(), n=1, cutoff=0.5)
@@ -254,12 +273,7 @@ for _, row in df_raw.iterrows():
         pick = str(row.get(gm, '')).strip()
         if not pick or pick.lower() == 'nan': continue
         p = clean_and_match(pick, stats)
-        master_list.append({
-            'GM': gm, 'Player_Id': p.get('playerId'), 'Player_Name': p.get('playerName'),
-            'Team_Raw': p.get('teamAbbrev'), 'Position': p.get('positionCode'),
-            'Points': p.get('totalPoints', 0), 'G': p.get('goals', 0), 'A': p.get('assists', 0),
-            'GP': p.get('gamesPlayed', 0), 'Round': str(row['Draft Rounds']).replace("Round", "").strip()
-        })
+        master_list.append({'GM': gm, 'Player_Id': p.get('playerId'), 'Player_Name': p.get('playerName'), 'Team_Raw': p.get('teamAbbrev'), 'Position': p.get('positionCode'), 'Points': p.get('totalPoints', 0), 'G': p.get('goals', 0), 'A': p.get('assists', 0), 'GP': p.get('gamesPlayed', 0), 'Round': str(row['Draft Rounds']).replace("Round", "").strip()})
 master_df = pd.DataFrame(master_list)
 master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).astype(int)
 master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else str(x))
@@ -267,35 +281,16 @@ master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" 
 display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
 if st.session_state.display_name: master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
 
-def generate_table(df):
-    h = "<table class='team-table'><tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Top Pick</th></tr>"
-    for _, r in df.iterrows():
-        is_elim = r['Team_Raw'] in ELIMINATED_TEAMS
-        is_playing = r['Team_Raw'] in TEAMS_PLAYING_TODAY and not is_elim
-        decor = "line-through" if is_elim else "none"
-        active = " 🔥" if is_playing else ""
-        news = f"<a href='https://news.google.com/search?q={r['Player_Name']}+NHL+when:2d' target='_blank' title='Player News'>📄</a>"
-        h += f"<tr style='text-decoration: {decor};'><td>{r['Round']}</td><td class='text-left'>{r['Player_Name']} {news}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
-    return h + "</table>"
-
-# --- 6. UI ---
+# --- 8. UI VIEWS ---
 salt = str(random.randint(1, 1000000))
-t_logo, t_title, t_text, t_menu = st.columns([0.6, 5.4, 3.5, 0.5])
-with t_title: st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
-with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
-with t_menu:
-    with st.popover("⚙️"):
-        new_disp = st.text_input("Display Name", value=st.session_state.display_name)
-        if st.button("Update"): st.session_state.display_name = new_disp; st.rerun()
-        if st.button("Log Out"): cookie_manager.delete('user_email_cookie'); st.session_state.authenticated = False; st.rerun()
-
-st.divider()
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed") or "League"
 
 if nav == "League":
     lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index().sort_values(['Points', 'G'], ascending=False)
     counts = master_df[~master_df['Team_Raw'].isin(ELIMINATED_TEAMS)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
+    lb['Rank'] = range(1, len(lb)+1)
+    max_pts = lb['Points'].max()
+    lb['Pts Back'] = max_pts - lb['Points']
     
     worst = lb.iloc[-1]; leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum()
     q1 = generate_ai_roast("Toronto", leafs_pts, 0, "leafs", salt)
@@ -303,35 +298,41 @@ if nav == "League":
     
     col_roast, col_btn = st.columns([0.85, 0.15])
     with col_roast: st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{q1}</b></div><div class='quote-2'><b>{q2}</b></div></div>", unsafe_allow_html=True)
-    with col_btn: 
+    with col_btn:
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Refresh Roasts"): st.cache_data.clear(); st.rerun()
 
-    lb['Rank'] = range(1, len(lb)+1)
-    lb_html = "<table class='team-table'><tr><th>Rank</th><th>Name</th><th>GP</th><th>Pts</th><th>G</th><th>A</th><th>Rem</th></tr>"
-    for _, r in lb.iterrows(): lb_html += f"<tr><td>{r['Rank']}</td><td class='text-left'>{r['GM']}</td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>{int(r['Rem'])}</td></tr>"
+    lb_html = "<table class='team-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Yesterday</th><th>Pts Back</th><th>Remaining</th></tr>"
+    for _, r in lb.iterrows():
+        avatar = f"<img src='{get_avatar_uri(r['GM'])}' width='30' style='border-radius:50%; vertical-align: middle;'>"
+        lb_html += f"<tr><td>{r['Rank']}</td><td>{avatar}</td><td class='text-left'>{r['GM']}</td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>0</td><td>{r['Pts Back']}</td><td>{int(r['Rem'])}</td></tr>"
     st.markdown(lb_html + "</table>", unsafe_allow_html=True)
 
 elif nav == "My Team":
-    sel_gm = st.selectbox("Team", display_gms, index=display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0)
+    sel_gm = st.selectbox("View Another Team", display_gms, index=display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0)
     my_df = master_df[master_df['GM'] == sel_gm]
-    elim_c = len(my_df[my_df['Team_Raw'].isin(ELIMINATED_TEAMS)])
+    q = generate_ai_roast(sel_gm, my_df['Points'].sum(), len(my_df[my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]), "normal", salt)
     
-    q = generate_ai_roast(sel_gm, my_df['Points'].sum(), elim_c, "normal", salt)
     col_roast, col_btn = st.columns([0.85, 0.15])
     with col_roast: st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>{q}</b></div>", unsafe_allow_html=True)
-    with col_btn: 
+    with col_btn:
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 Refresh AI"): st.cache_data.clear(); st.rerun()
 
-    k1, k2, k3 = st.columns(3)
+    c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
+    with c1: st.empty() # Placeholder for selection
+    with c2: time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}; stat_filter = st.selectbox("Stats", list(time_options.keys()))
+    
     pids = my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY)]['Player_Id'].dropna()
     p_today = sum(get_historical_points(pids, 0).values()) if not pids.empty else 0
-    k1.metric("Points Today", p_today)
-    k2.metric("Players Active Today", len(my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
-    k3.metric("Players Remaining", len(my_df[~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
-    
-    st.markdown(generate_table(my_df), unsafe_allow_html=True)
+    with c3: st.metric("Points Today", p_today)
+    with c4: st.metric("Players Active Today", len(my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
+    with c5: st.metric("Players Remaining", len(my_df[~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
+
+    st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
+    st.markdown(generate_team_table_html(my_df), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
     for g in display_gms:
-        st.markdown(f"<h3 style='color:#0068c9;'>{g}</h3>", unsafe_allow_html=True)
-        st.markdown(generate_table(master_df[master_df['GM'] == g]), unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
+        st.markdown(generate_team_table_html(master_df[master_df['GM'] == g]), unsafe_allow_html=True)
