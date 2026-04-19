@@ -214,18 +214,17 @@ def get_roster_dictionary():
             res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current", headers=HEADERS, timeout=10)
             if res.status_code == 200:
                 data = res.json()
-                for group in ['forwards', 'defensemen', 'goalies']:
+                for group in ['forwards', 'defensemen']:
                     for p in data.get(group, []):
                         name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
                         clean_name = name.replace('ü', 'u').replace('.', '')
-                        roster_dict[clean_name] = {'id': p.get('id'), 'pos': p.get('positionCode', 'G')}
+                        roster_dict[clean_name] = {'id': p.get('id'), 'pos': p.get('positionCode', '')}
         except: pass
     return roster_dict
 
 @st.cache_data(ttl=3600)
 def fetch_live_data():
     base_url_skater = "https://api.nhle.com/stats/rest/en/skater/summary"
-    base_url_goalie = "https://api.nhle.com/stats/rest/en/goalie/summary"
     
     def get_data(url, game_type):
         all_data = []
@@ -251,19 +250,17 @@ def fetch_live_data():
                     break
             except Exception:
                 break
-        return pd.DataFrame(all_data)
+        
+        df = pd.DataFrame(all_data)
+        if not df.empty:
+            df.rename(columns={'skaterFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
+        return df
 
-    df_p_s = get_data(base_url_skater, 3)
-    df_r_s = get_data(base_url_skater, 2)
-    df_p_g = get_data(base_url_goalie, 3)
-    df_r_g = get_data(base_url_goalie, 2)
-    
-    df_p = pd.concat([df_p_s, df_p_g], ignore_index=True) if not df_p_s.empty or not df_p_g.empty else pd.DataFrame()
-    df_r = pd.concat([df_r_s, df_r_g], ignore_index=True) if not df_r_s.empty or not df_r_g.empty else pd.DataFrame()
+    df_p = get_data(base_url_skater, 3)
+    df_r = get_data(base_url_skater, 2)
 
     for df in [df_p, df_r]:
         if not df.empty:
-            df.rename(columns={'skaterFullName': 'playerName', 'goalieFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
             if 'playerName' not in df.columns: df['playerName'] = ''
             df['lastName'] = df['playerName'].apply(lambda x: str(x).split(' ', 1)[-1].lower() if ' ' in str(x) else str(x).lower())
             
