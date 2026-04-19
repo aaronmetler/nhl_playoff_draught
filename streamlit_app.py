@@ -17,15 +17,13 @@ if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
 # Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
-if 'nav_override' not in st.session_state: st.session_state.nav_override = None
 if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
 if 'is_jump' not in st.session_state: st.session_state.is_jump = False
-if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = '(Select Team)'
 
 # Handle Safe URL Navigation (Deep Linking)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.nav_override = "My Team"
+        st.session_state.main_nav = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
         st.session_state.is_jump = True
     st.query_params.clear()
@@ -78,11 +76,6 @@ st.markdown("""
             text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
-
-        /* Anchor Links */
-        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
-        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
-        .anchor-links a:hover { text-decoration: underline; }
         
         /* GM Header with Back to Top */
         .gm-header-bar {
@@ -90,13 +83,11 @@ st.markdown("""
             border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
         }
         .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
-        .gm-header-bar a { font-size: 14px; color: #0068c9; text-decoration: none; font-weight: 500; }
-        .gm-header-bar a:hover { text-decoration: underline; }
     </style>
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-ET_ZONE = ZoneInfo("America/New_York")
+ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 3. AUTHENTICATION ---
@@ -267,19 +258,15 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# --- NAVIGATION SYSTEM (State Overrides & Jump Detection) ---
-if st.session_state.nav_override:
-    st.session_state.main_nav = st.session_state.nav_override
-    st.session_state.nav_override = None
-
+# --- DIRECT WIDGET KEY CONTROL (Fixes first-click bugs) ---
 nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="main_nav", label_visibility="collapsed")
 
-# Safeguard logic: Only reset to Logged In User if they explicitly clicked the 'My Team' tab, not if they jumped.
+# Safeguard logic to manage state seamlessly between tabs
 if nav == "My Team" and st.session_state.last_nav != "My Team":
     if st.session_state.is_jump:
-        st.session_state.is_jump = False  # Consume the jump flag, keep the selected GM
+        st.session_state.is_jump = False  # Consume jump flag to keep selected GM
     else:
-        st.session_state.sel_gm_val = st.session_state.display_name  # Reset to logged in user
+        st.session_state.sel_gm_val = st.session_state.display_name  # Reset to logged-in user if clicked manually
 
 st.session_state.last_nav = nav
 
@@ -300,9 +287,10 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
+            # By directly modifying main_nav, the next run executes instantly and flawlessly
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.nav_override = "My Team"
+                st.session_state.main_nav = "My Team"
                 st.session_state.is_jump = True
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
@@ -382,9 +370,9 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.nav_override = "My Team"
+            st.session_state.main_nav = "My Team"
             st.session_state.is_jump = True
-            st.session_state.all_rost_jump = "(Select Team)" # Reset dropdown
+            st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
@@ -399,22 +387,22 @@ elif nav == "All Rosters":
         total_df['A'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
         total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
-    # Calculate grouped totals and sort GM lists dynamically
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' target='_self'>{g}</a>" for g in sorted_gms])
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
             <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
+            <div style='text-align: right;'>{anchor_html}</div>
         </div>
     """, unsafe_allow_html=True)
     
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page' target='_self'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+        # Native HTML Jump Anchor with no target to avoid Streamlit page reloads
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page' style='font-size: 14px; color: #0068c9; text-decoration: none;'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
