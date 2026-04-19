@@ -5,7 +5,6 @@ import datetime
 from zoneinfo import ZoneInfo
 import base64
 import extra_streamlit_components as stx
-import xml.etree.ElementTree as ET
 import os
 
 # Try to import Gemini, handle gracefully if missing or secret not set
@@ -353,26 +352,13 @@ def get_teams_playing_today():
     except: pass
     return []
 
-@st.cache_data(ttl=3600)
-def get_daily_headlines():
-    headlines = ["NHL playoffs continue with fierce matchups"]
-    try:
-        resp = requests.get("https://www.espn.com/espn/rss/nhl/news", headers=HEADERS, timeout=5)
-        if resp.status_code == 200:
-            root = ET.fromstring(resp.content)
-            items = root.findall('.//item/title')
-            if items: 
-                headlines = [item.text for item in items[:15]] # Get top 15 headlines for variety
-    except: pass
-    return headlines
-
 # --- AI ROAST GENERATOR ---
 @st.cache_data(ttl=3600*12) 
-def generate_ai_roast(gm_name, pts, active_players, eliminated_players, headline, team_type):
-    fallback = f"📰 \"{headline}\" — Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
+def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_type):
+    fallback = f"Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
     if team_type == "leafs":
         days_since = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
-        fallback = f"🍁 Toronto Tracker: \"{headline}\" — GMs have squeezed {pts} points out of the Leafs. {days_since} days since 1967."
+        fallback = f"🍁 Toronto Tracker: GMs have squeezed {pts} points out of the Leafs. {days_since} days since 1967."
 
     if not GEMINI_READY:
         return "🔥 " + fallback
@@ -385,8 +371,8 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, headline
             system_prompt = f"""
             You are a sarcastic hockey commentator. Write a 1-2 sentence roast about the Toronto Maple Leafs.
             The GMs in this pool have drafted Leafs players who have combined for {pts} points. 
-            Mention the current NHL headline: "{headline}".
-            Also casually mention that it has been {days_since} days since they last won the cup in 1967.
+            Casually mention that it has been {days_since} days since they last won the cup in 1967.
+            Do not include any news headlines.
             """
         else:
             system_prompt = f"""
@@ -398,13 +384,12 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, headline
             - Active Players Left: {active_players}
             - Eliminated Players: {eliminated_players}
             
-            Incorporate this real NHL headline into the joke: "{headline}"
-            
             Rules:
             - Be funny and sarcastic, but not overly offensive or profane.
             - If they have 0 points or lots of eliminated players, show no mercy.
             - If they are doing well (high points), sarcastically imply they are getting lucky.
             - Keep it brief (max 2 sentences).
+            - Focus purely on the GM and their stats. Do not include or make up fake news headlines.
             """
 
         response = model.generate_content(system_prompt)
@@ -417,7 +402,6 @@ roster_dict = get_roster_dictionary()
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
 TEAMS_PLAYING_TODAY = get_teams_playing_today()
-DAILY_HEADLINES = get_daily_headlines()
 
 try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
@@ -607,19 +591,14 @@ if nav == "League":
         
         worst_gm_row = lb.iloc[-1]
         
-        # Grab the first headline for the Leafs roast
-        leafs_headline = DAILY_HEADLINES[0] if DAILY_HEADLINES else "NHL Playoffs Continue"
         leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum() if 'TOR' in master_df['Team_Raw'].values else 0
-        leafs_dynamic_quote = generate_ai_roast("Toronto", leafs_pts, 0, 0, leafs_headline, "leafs")
+        leafs_dynamic_quote = generate_ai_roast("Toronto", leafs_pts, 0, 0, "leafs")
         
-        # Grab a different headline for the worst GM roast
-        worst_headline = DAILY_HEADLINES[1 % len(DAILY_HEADLINES)] if DAILY_HEADLINES else "NHL Playoffs Continue"
         worst_gm_quote = generate_ai_roast(
             worst_gm_row['GM'], 
             worst_gm_row['Points'], 
             worst_gm_row['Players Remaining'], 
-            10 - worst_gm_row['Players Remaining'],
-            worst_headline, 
+            10 - worst_gm_row['Players Remaining'], # Approximating drafted count
             "normal"
         )
         
@@ -640,16 +619,11 @@ elif nav == "My Team":
     alive_count_preview = my_team_df_preview[~my_team_df_preview['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team_df_preview.empty else 0
     elim_count_preview = len(my_team_df_preview) - alive_count_preview if not my_team_df_preview.empty else 0
     
-    # Assign a specific headline to this GM based on their index in the dropdown list
-    gm_idx = display_gms.index(selected_gm_temp) if selected_gm_temp in display_gms else 0
-    team_headline = DAILY_HEADLINES[gm_idx % len(DAILY_HEADLINES)] if DAILY_HEADLINES else "NHL Playoffs Continue"
-    
     gm_specific_roast = generate_ai_roast(
         selected_gm_temp, 
         my_team_df_preview['Points'].sum() if not my_team_df_preview.empty else 0, 
         alive_count_preview, 
         elim_count_preview, 
-        team_headline, 
         "normal"
     )
     
