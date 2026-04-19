@@ -14,12 +14,16 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-if 'current_nav' not in st.session_state: st.session_state.current_nav = 'League'
 
-# Handle URL Navigation (from League Table buttons)
+# Bulletproof Navigation State Setup
+if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
+if 'last_valid_nav' not in st.session_state: st.session_state.last_valid_nav = 'League'
+if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = '(Select Team)'
+
+# Handle URL Navigation
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.current_nav = "My Team"
+        st.session_state.nav_state = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
@@ -64,7 +68,7 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links */
+        /* Invisible Buttons for GM Links (Perfect Alignment) */
         div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
         div.stButton > button {
             border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
@@ -250,9 +254,17 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Navigation via generic session state to avoid key conflict errors
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.current_nav, label_visibility="collapsed")
-st.session_state.current_nav = nav
+# Bulletproof Navigation Handler
+st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="nav_state", label_visibility="collapsed")
+
+# Safeguard against accidental deselection
+if st.session_state.nav_state is None:
+    st.session_state.nav_state = st.session_state.last_valid_nav
+    st.rerun()
+else:
+    st.session_state.last_valid_nav = st.session_state.nav_state
+
+nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
 if nav == "League":
@@ -271,10 +283,11 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Native Streamlit Button for direct state manipulation
+            # Native Streamlit Button linked to state
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.current_nav = "My Team"
+                st.session_state.nav_state = "My Team"
+                st.session_state.last_valid_nav = "My Team"
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
@@ -285,17 +298,14 @@ if nav == "League":
         b_cols[8].markdown(f"<div class='cell-text plain-text'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
 
 elif nav == "My Team":
+    # Ensure a valid selection
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
         st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
     
     st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{st.session_state.sel_gm_val}</b>'s roster.</div>", unsafe_allow_html=True)
     
     c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1.2, 1, 1, 1, 1])
-    with c1: 
-        curr = st.selectbox("View another team", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
-        if curr != st.session_state.sel_gm_val:
-            st.session_state.sel_gm_val = curr
-            st.rerun()
+    with c1: st.selectbox("View another team", gms, key="sel_gm_val")
     with c2: horizon = st.selectbox("Stats", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz1")
     
     my_df = master_df[master_df['GM'] == st.session_state.sel_gm_val].copy()
@@ -341,21 +351,22 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    # Hidden anchor to act as top of page target
     st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{gms[0]}</b> and the rest of the league.</div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1.5, 1.2, 3.3])
     with c1: 
-        jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
-        if jump_gm != "(Select Team)":
-            st.session_state.sel_gm_val = jump_gm
-            st.session_state.current_nav = "My Team"
+        st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
+        if st.session_state.all_rost_jump != "(Select Team)":
+            st.session_state.sel_gm_val = st.session_state.all_rost_jump
+            st.session_state.nav_state = "My Team"
+            st.session_state.last_valid_nav = "My Team"
+            st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
+            
     with c2: horizon = st.selectbox("Stats", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz2")
     
-    # Legend & Anchors Side-by-Side
     anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
@@ -371,7 +382,6 @@ elif nav == "All Rosters":
         total_df['Pts'] = total_df['Player_Id'].map(lambda x: h_pts.get(x, {}).get('yesterday' if days==1 else 'last7', 0)).fillna(0).astype(int)
         for c in ['G','A','GP','Top_Pick']: total_df[c] = "-"
 
-    # Render Each Team
     for g in gms:
         st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
