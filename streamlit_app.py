@@ -361,7 +361,7 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
         fallback = f"🍁 Toronto Tracker: GMs have squeezed {pts} points out of the Leafs. {days_since} days since 1967."
 
     if not GEMINI_READY:
-        return "🔥 " + fallback
+        return fallback
 
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -372,6 +372,7 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
             You are a sarcastic hockey commentator. Write a 1-2 sentence roast about the Toronto Maple Leafs.
             The GMs in this pool have drafted Leafs players who have combined for {pts} points. 
             Casually mention that it has been {days_since} days since they last won the cup in 1967.
+            Channel current public sentiment and hockey fan consensus about the Leafs' playoff struggles to make the roast hit harder.
             Do not include any news headlines.
             """
         else:
@@ -385,18 +386,19 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
             - Eliminated Players: {eliminated_players}
             
             Rules:
-            - Be funny and sarcastic, but not overly offensive or profane.
+            - Be funny and sarcastic, channeling the current public sentiment of hockey fans. If they have lots of eliminated players, mock them like a disappointed fanbase would.
+            - Do not be overly offensive or profane.
             - If they have 0 points or lots of eliminated players, show no mercy.
-            - If they are doing well (high points), sarcastically imply they are getting lucky.
+            - If they are doing well (high points), sarcastically imply they are getting lucky or riding the coattails of a superstar.
             - Keep it brief (max 2 sentences).
             - Focus purely on the GM and their stats. Do not include or make up fake news headlines.
             """
 
         response = model.generate_content(system_prompt)
-        return "🔥 " + response.text.replace('\n', ' ').strip()
+        return response.text.replace('\n', ' ').strip()
         
     except Exception:
-        return "🔥 " + fallback
+        return fallback
 
 roster_dict = get_roster_dictionary()
 stats = fetch_live_data()
@@ -598,7 +600,7 @@ if nav == "League":
             worst_gm_row['GM'], 
             worst_gm_row['Points'], 
             worst_gm_row['Players Remaining'], 
-            10 - worst_gm_row['Players Remaining'], # Approximating drafted count
+            10 - worst_gm_row['Players Remaining'],
             "normal"
         )
         
