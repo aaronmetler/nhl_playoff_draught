@@ -224,7 +224,6 @@ def get_roster_dictionary():
             res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current", headers=HEADERS, timeout=10)
             if res.status_code == 200:
                 data = res.json()
-                # Strictly skaters
                 for group in ['forwards', 'defensemen']:
                     for p in data.get(group, []):
                         name = f"{p['firstName']['default']} {p['lastName']['default']}".lower()
@@ -355,21 +354,21 @@ def get_teams_playing_today():
     return []
 
 @st.cache_data(ttl=3600)
-def get_daily_headline():
-    headline = "NHL playoffs continue with fierce matchups"
+def get_daily_headlines():
+    headlines = ["NHL playoffs continue with fierce matchups"]
     try:
         resp = requests.get("https://www.espn.com/espn/rss/nhl/news", headers=HEADERS, timeout=5)
         if resp.status_code == 200:
             root = ET.fromstring(resp.content)
             items = root.findall('.//item/title')
-            if items: headline = items[0].text
+            if items: 
+                headlines = [item.text for item in items[:15]] # Get top 15 headlines for variety
     except: pass
-    return headline
+    return headlines
 
 # --- AI ROAST GENERATOR ---
 @st.cache_data(ttl=3600*12) 
 def generate_ai_roast(gm_name, pts, active_players, eliminated_players, headline, team_type):
-    # Fallback algorithmic roast
     fallback = f"📰 \"{headline}\" — Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
     if team_type == "leafs":
         days_since = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
@@ -418,7 +417,7 @@ roster_dict = get_roster_dictionary()
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
 TEAMS_PLAYING_TODAY = get_teams_playing_today()
-DAILY_HEADLINE = get_daily_headline()
+DAILY_HEADLINES = get_daily_headlines()
 
 try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
@@ -608,15 +607,19 @@ if nav == "League":
         
         worst_gm_row = lb.iloc[-1]
         
+        # Grab the first headline for the Leafs roast
+        leafs_headline = DAILY_HEADLINES[0] if DAILY_HEADLINES else "NHL Playoffs Continue"
         leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum() if 'TOR' in master_df['Team_Raw'].values else 0
-        leafs_dynamic_quote = generate_ai_roast("Toronto", leafs_pts, 0, 0, DAILY_HEADLINE, "leafs")
+        leafs_dynamic_quote = generate_ai_roast("Toronto", leafs_pts, 0, 0, leafs_headline, "leafs")
         
+        # Grab a different headline for the worst GM roast
+        worst_headline = DAILY_HEADLINES[1 % len(DAILY_HEADLINES)] if DAILY_HEADLINES else "NHL Playoffs Continue"
         worst_gm_quote = generate_ai_roast(
             worst_gm_row['GM'], 
             worst_gm_row['Points'], 
             worst_gm_row['Players Remaining'], 
-            10 - worst_gm_row['Players Remaining'], # Approximating drafted count
-            DAILY_HEADLINE, 
+            10 - worst_gm_row['Players Remaining'],
+            worst_headline, 
             "normal"
         )
         
@@ -637,12 +640,16 @@ elif nav == "My Team":
     alive_count_preview = my_team_df_preview[~my_team_df_preview['Team_Raw'].isin(ELIMINATED_TEAMS)].shape[0] if not my_team_df_preview.empty else 0
     elim_count_preview = len(my_team_df_preview) - alive_count_preview if not my_team_df_preview.empty else 0
     
+    # Assign a specific headline to this GM based on their index in the dropdown list
+    gm_idx = display_gms.index(selected_gm_temp) if selected_gm_temp in display_gms else 0
+    team_headline = DAILY_HEADLINES[gm_idx % len(DAILY_HEADLINES)] if DAILY_HEADLINES else "NHL Playoffs Continue"
+    
     gm_specific_roast = generate_ai_roast(
         selected_gm_temp, 
         my_team_df_preview['Points'].sum() if not my_team_df_preview.empty else 0, 
         alive_count_preview, 
         elim_count_preview, 
-        DAILY_HEADLINE, 
+        team_headline, 
         "normal"
     )
     
