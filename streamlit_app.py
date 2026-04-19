@@ -130,7 +130,7 @@ if not is_authenticated():
                 else: st.error("Invalid credentials.")
     st.stop()
 
-# --- 4. ROCK SOLID API FETCHING ---
+# --- 4. STRICT API FETCHING ---
 def fetch_single_roster(team):
     res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
     res.raise_for_status() 
@@ -254,7 +254,7 @@ except Exception as e:
     st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -263,12 +263,16 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Smooth Navigation - State applies seamlessly
+# Seamless Navigation Control (No redundant st.rerun)
 nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
-st.session_state.nav_state = nav
+if nav:
+    st.session_state.nav_state = nav
+else:
+    nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
 if nav == "League":
+    # Aggregate data exactly from master_df
     lb = master_df.groupby('GM').agg({'GP':'sum','Pts':'sum','G':'sum','A':'sum','Pts_Yest':'sum'}).reset_index().sort_values(['Pts','G'], ascending=False)
     counts = master_df[~master_df['Team'].isin(ELIMINATED)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
@@ -315,8 +319,8 @@ elif nav == "My Team":
     with c3: st.metric("Total Pts", int(my_df['Pts'].sum()))
     with c4: st.metric("Points Today", int(my_df['Pts_Today'].sum()))
     with c5: st.metric("Points Yesterday", int(my_df['Pts_Yest'].sum()))
-    with c6: st.metric("Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
-    with c7: st.metric("Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
+    with c6: st.metric("Players Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
+    with c7: st.metric("Players Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
 
     st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
 
