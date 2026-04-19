@@ -1,16 +1,141 @@
-,Team Name,,,,,,,,,,,
-Draft Rounds,Jay,Big M,Mike,Aaron,Trakas,Gardner,Pete,Duncs,Torrie,Rhys,,Rules
-Round 1,McDavid - EDM,Kucherov-TB,MacKinnon - COL,Necas - COL,Robertson - DAL,Thompson - BUF,Draisaitl- EDM,Makar - COL,Johnston - DAL,Rantanen - Dal,,Min 3 D
-Round 2,Hagel - TB,Raddysh-Tb,Caufield - MTL,Crosby - PIT,Aho - CAR,Dahlin- BUF,Bouchard-EDM,Eichel - VGK,Suzuki - MTL,Heiskanen - Dal,,$50 buy in
-Round 3,Hedman - TB,Guentzel-TB,Hutson - MTL,E. Karlsson - PIT,Marner - VGK,Kaprizov - MIN,Point-TB,Ehlers - CAR,Malkin - PIT,Jarvis - Car,,1st receives $450
-Round 4,Nugent-Hopkins - EDM,Hyman EDM,Svechnikov - CAR,Chinakov - PIT,Lekhonen -COL,Quinn Hughes -MIN,Cirelli-TB,Nelson - COL,Stone - VGK,Gostistbehere - Car,,2nd receives $50
-Round 5,Hintz - DAL,Dorofeyev-Vegas,Landeskog - COL,Rust - PIT,Hertl - VGK,Boldy - MIN,Stützle-OTT,Pastrnak - BOS,Theodore-VGK,Duchene - Dal,,2 min time limit for picks
-Round 6,Toews - COL,Doan-Buf,Slafkovsky - MTL,Zuccarello - MIN,Mcavoy - BOS,Tuch BUF,Tkachuk-OTT,Malinski - COL,Harley-DAL,Blake - Car,,
-Round 7,Paul - TB,Sanderson- Ott,Miller - CAR,Faber - MIN,Stankoven - CAR,Konecny - PHI,Keller-UTA,Barbashev - VGK,Rakell-PIT,Guenther - UTA,,
-Round 8,Michkov - PHI,McLeod-Buf,Kadri - COL,Hartman - MIN,Hanifin - VGK,Zegras - PHI,Ekholm-EDM,Mantha - PIT,Demidov-MTL,Sergachev - UTA,,
-Round 9,Benn - DAL,Byram - BUF,Hall - CAR,Nichushkin - COL,Bourque - DAL,Norris - BUF,Batherson-OTT,Geekie - BOS,Dobson-MTL,Schmaltz - UTA,,
-Round 10,Moser - TB,Zucker-Buf,Gauthier - ANA,L. Carlsson - ANA,Martinook - CAR,Quinn - BUF,Roslovic-EDM,Andersson - VGK,Steel-DAL,Cooley - UTA,,
-Round 11,Tippet - PHI,Eriksson EK- Min,Lacombe - ANA,Cozens - OTT,Nikishin - CAR,Martone - PHI,Savoie-EDM,Tarasenko - MIN,Novak-PIT,Zacha - Bos,,
-Round 12,Foerster - PHI,Dvorak-Phi,Terry - ANA,Giroux - OTT, Arvidsson -BOS,Johansson - MIN,C.E. D'Astous-TB,Bjorkstrand - TB,Smith-VGK,E. Lindholm - Bos,,
-Round 13,Goncalves - TB,Kempe-LA,Gallagher - MTL,Panarin - LA,Kapanen - MTL,Benson - BUF,Perry-TB,Mittelstadt - BOS,Kindel-PIT,Granlund - Ana,,
-Round 14,Pelletier - TB,Cates-Phil,Sennecke - ANA,Letang - PIT,Staal - CAR,Sanheim — PHI,Peterka-UTA,Podkolzin - EDM,Hryckowian-DAL,J Carlson - Ana,,
+Round,Pick,Player,Team Name,Acronym,GM Owner
+1,1,Connor McDavid,Edmonton Oilers,EDM,Jay
+1,2,Nikita Kucherov,Tampa Bay Lightning,TBL,Big M
+1,3,Nathan MacKinnon,Colorado Avalanche,COL,Mike
+1,4,Martin Necas,Colorado Avalanche,COL,Aaron
+1,5,Jason Robertson,Dallas Stars,DAL,Trakas
+1,6,Tage Thompson,Buffalo Sabres,BUF,Gardner
+1,7,Leon Draisaitl,Edmonton Oilers,EDM,Pete
+1,8,Cale Makar,Colorado Avalanche,COL,Duncs
+1,9,Wyatt Johnston,Dallas Stars,DAL,Torrie
+1,10,Mikko Rantanen,Dallas Stars,DAL,Rhys
+2,11,Brandon Hagel,Tampa Bay Lightning,TBL,Jay
+2,12,Taylor Raddysh,Tampa Bay Lightning,TBL,Big M
+2,13,Cole Caufield,Montreal Canadiens,MTL,Mike
+2,14,Sidney Crosby,Pittsburgh Penguins,PIT,Aaron
+2,15,Sebastian Aho,Carolina Hurricanes,CAR,Trakas
+2,16,Rasmus Dahlin,Buffalo Sabres,BUF,Gardner
+2,17,Evan Bouchard,Edmonton Oilers,EDM,Pete
+2,18,Jack Eichel,Vegas Golden Knights,VGK,Duncs
+2,19,Nick Suzuki,Montreal Canadiens,MTL,Torrie
+2,20,Miro Heiskanen,Dallas Stars,DAL,Rhys
+3,21,Victor Hedman,Tampa Bay Lightning,TBL,Jay
+3,22,Jake Guentzel,Tampa Bay Lightning,TBL,Big M
+3,23,Lane Hutson,Montreal Canadiens,MTL,Mike
+3,24,Erik Karlsson,Pittsburgh Penguins,PIT,Aaron
+3,25,Mitch Marner,Vegas Golden Knights,VGK,Trakas
+3,26,Kirill Kaprizov,Minnesota Wild,MIN,Gardner
+3,27,Brayden Point,Tampa Bay Lightning,TBL,Pete
+3,28,Nikolaj Ehlers,Carolina Hurricanes,CAR,Duncs
+3,29,Evgeni Malkin,Pittsburgh Penguins,PIT,Torrie
+3,30,Seth Jarvis,Carolina Hurricanes,CAR,Rhys
+4,31,R. Nugent-Hopkins,Edmonton Oilers,EDM,Jay
+4,32,Zach Hyman,Edmonton Oilers,EDM,Big M
+4,33,Andrei Svechnikov,Carolina Hurricanes,CAR,Mike
+4,34,Yegor Chinakhov,Pittsburgh Penguins,PIT,Aaron
+4,35,Artturi Lehkonen,Colorado Avalanche,COL,Trakas
+4,36,Quinn Hughes,Minnesota Wild,MIN,Gardner
+4,37,Anthony Cirelli,Tampa Bay Lightning,TBL,Pete
+4,38,Brock Nelson,Colorado Avalanche,COL,Duncs
+4,39,Mark Stone,Vegas Golden Knights,VGK,Torrie
+4,40,S. Gostisbehere,Carolina Hurricanes,CAR,Rhys
+5,41,Roope Hintz,Dallas Stars,DAL,Jay
+5,42,Pavel Dorofeyev,Vegas Golden Knights,VGK,Big M
+5,43,Gabriel Landeskog,Colorado Avalanche,COL,Mike
+5,44,Bryan Rust,Pittsburgh Penguins,PIT,Aaron
+5,45,Tomas Hertl,Vegas Golden Knights,VGK,Trakas
+5,46,Matt Boldy,Minnesota Wild,MIN,Gardner
+5,47,Tim Stützle,Ottawa Senators,OTT,Pete
+5,48,David Pastrnak,Boston Bruins,BOS,Duncs
+5,49,Shea Theodore,Vegas Golden Knights,VGK,Torrie
+5,50,Matt Duchene,Dallas Stars,DAL,Rhys
+6,51,Devon Toews,Colorado Avalanche,COL,Jay
+6,52,Josh Doan,Buffalo Sabres,BUF,Big M
+6,53,Juraj Slafkovsky,Montreal Canadiens,MTL,Mike
+6,54,Mats Zuccarello,Minnesota Wild,MIN,Aaron
+6,55,Charlie Mcavoy,Boston Bruins,BOS,Trakas
+6,56,Alex Tuch,Buffalo Sabres,BUF,Gardner
+6,57,Brady Tkachuk,Ottawa Senators,OTT,Pete
+6,58,Sam Malinski,Colorado Avalanche,COL,Duncs
+6,59,Thomas Harley,Dallas Stars,DAL,Torrie
+6,60,Macklin Blake,Carolina Hurricanes,CAR,Rhys
+7,61,Nick Paul,Tampa Bay Lightning,TBL,Jay
+7,62,Jake Sanderson,Ottawa Senators,OTT,Big M
+7,63,J.T. Miller,Carolina Hurricanes,CAR,Mike
+7,64,Brock Faber,Minnesota Wild,MIN,Aaron
+7,65,Logan Stankoven,Carolina Hurricanes,CAR,Trakas
+7,66,Travis Konecny,Philadelphia Flyers,PHI,Gardner
+7,67,Clayton Keller,Utah Mammoth,UTA,Pete
+7,68,Ivan Barbashev,Vegas Golden Knights,VGK,Duncs
+7,69,Rickard Rakell,Pittsburgh Penguins,PIT,Torrie
+7,70,Dylan Guenther,Utah Mammoth,UTA,Rhys
+8,71,Matvei Michkov,Philadelphia Flyers,PHI,Jay
+8,72,Ryan McLeod,Buffalo Sabres,BUF,Big M
+8,73,Nazem Kadri,Colorado Avalanche,COL,Mike
+8,74,Ryan Hartman,Minnesota Wild,MIN,Aaron
+8,75,Noah Hanifin,Vegas Golden Knights,VGK,Trakas
+8,76,Trevor Zegras,Philadelphia Flyers,PHI,Gardner
+8,77,Mattias Ekholm,Edmonton Oilers,EDM,Pete
+8,78,Anthony Mantha,Pittsburgh Penguins,PIT,Duncs
+8,79,Ivan Demidov,Montreal Canadiens,MTL,Torrie
+8,80,Mikhail Sergachev,Utah Mammoth,UTA,Rhys
+9,81,Jamie Benn,Dallas Stars,DAL,Jay
+9,82,Bowen Byram,Buffalo Sabres,BUF,Big M
+9,83,Taylor Hall,Carolina Hurricanes,CAR,Mike
+9,84,Valeri Nichushkin,Colorado Avalanche,COL,Aaron
+9,85,Mavrik Bourque,Dallas Stars,DAL,Trakas
+9,86,Josh Norris,Buffalo Sabres,BUF,Gardner
+9,87,Drake Batherson,Ottawa Senators,OTT,Pete
+9,88,Morgan Geekie,Boston Bruins,BOS,Duncs
+9,89,Noah Dobson,Montreal Canadiens,MTL,Torrie
+9,90,Nick Schmaltz,Utah Mammoth,UTA,Rhys
+10,91,J.J. Moser,Tampa Bay Lightning,TBL,Jay
+10,92,Jason Zucker,Buffalo Sabres,BUF,Big M
+10,93,Cutter Gauthier,Anaheim Ducks,ANA,Mike
+10,94,Leo Carlsson,Anaheim Ducks,ANA,Aaron
+10,95,Jordan Martinook,Carolina Hurricanes,CAR,Trakas
+10,96,Jack Quinn,Buffalo Sabres,BUF,Gardner
+10,97,Jack Roslovic,Edmonton Oilers,EDM,Pete
+10,98,Rasmus Andersson,Vegas Golden Knights,VGK,Duncs
+10,99,Sam Steel,Dallas Stars,DAL,Torrie
+10,100,Logan Cooley,Utah Mammoth,UTA,Rhys
+11,101,Owen Tippett,Philadelphia Flyers,PHI,Jay
+11,102,Joel Eriksson EK,Minnesota Wild,MIN,Big M
+11,103,Jackson Lacombe,Anaheim Ducks,ANA,Mike
+11,104,Dylan Cozens,Ottawa Senators,OTT,Aaron
+11,105,Alexander Nikishin,Carolina Hurricanes,CAR,Trakas
+11,106,Porter Martone,Philadelphia Flyers,PHI,Gardner
+11,107,Matt Savoie,Edmonton Oilers,EDM,Pete
+11,108,Vladimir Tarasenko,Minnesota Wild,MIN,Duncs
+11,109,Frederick Novak,Pittsburgh Penguins,PIT,Torrie
+11,110,Pavel Zacha,Boston Bruins,BOS,Rhys
+12,111,Tyson Foerster,Philadelphia Flyers,PHI,Jay
+12,112,Christian Dvorak,Philadelphia Flyers,PHI,Big M
+12,113,Troy Terry,Anaheim Ducks,ANA,Mike
+12,114,Claude Giroux,Ottawa Senators,OTT,Aaron
+12,115,Viktor Arvidsson,Boston Bruins,BOS,Trakas
+12,116,Marcus Johansson,Minnesota Wild,MIN,Gardner
+12,117,C.E. D'Astous,Tampa Bay Lightning,TBL,Pete
+12,118,Oliver Bjorkstrand,Tampa Bay Lightning,TBL,Duncs
+12,119,Reilly Smith,Vegas Golden Knights,VGK,Torrie
+12,120,Elias Lindholm,Boston Bruins,BOS,Rhys
+13,121,Gage Goncalves,Tampa Bay Lightning,TBL,Jay
+13,122,Adrian Kempe,Los Angeles Kings,LAK,Big M
+13,123,Brendan Gallagher,Montreal Canadiens,MTL,Mike
+13,124,Artemi Panarin,Los Angeles Kings,LAK,Aaron
+13,125,Kasperi Kapanen,Montreal Canadiens,MTL,Trakas
+13,126,Zach Benson,Buffalo Sabres,BUF,Gardner
+13,127,Corey Perry,Tampa Bay Lightning,TBL,Pete
+13,128,Casey Mittelstadt,Boston Bruins,BOS,Duncs
+13,129,Isaac Kindel,Pittsburgh Penguins,PIT,Torrie
+13,130,Mikael Granlund,Anaheim Ducks,ANA,Rhys
+14,131,Jakob Pelletier,Tampa Bay Lightning,TBL,Jay
+14,132,Noah Cates,Philadelphia Flyers,PHI,Big M
+14,133,Beckett Sennecke,Anaheim Ducks,ANA,Mike
+14,134,Kris Letang,Pittsburgh Penguins,PIT,Aaron
+14,135,Jordan Staal,Carolina Hurricanes,CAR,Trakas
+14,136,Travis Sanheim,Philadelphia Flyers,PHI,Gardner
+14,137,J.J. Peterka,Utah Mammoth,UTA,Pete
+14,138,Vasily Podkolzin,Edmonton Oilers,EDM,Duncs
+14,139,Maxim Hryckowian,Dallas Stars,DAL,Torrie
+14,140,John Carlson,Anaheim Ducks,ANA,Rhys
