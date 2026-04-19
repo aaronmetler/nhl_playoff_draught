@@ -9,18 +9,14 @@ import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. SESSION & ROUTING INITIALIZATION ---
+# --- 1. SESSION INITIALIZATION ---
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-
-# Bulletproof Navigation State Setup
 if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
-if 'last_valid_nav' not in st.session_state: st.session_state.last_valid_nav = 'League'
-if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = '(Select Team)'
 
-# Handle URL Navigation
+# Handle URL Navigation (from League Table buttons)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
         st.session_state.nav_state = "My Team"
@@ -68,7 +64,7 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links (Perfect Alignment) */
+        /* Invisible Buttons for GM Links */
         div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
         div.stButton > button {
             border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
@@ -92,7 +88,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-PT_ZONE = ZoneInfo("America/Los_Angeles")
+ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 3. AUTHENTICATION ---
@@ -133,20 +129,17 @@ if not is_authenticated():
                 else: st.error("Invalid credentials.")
     st.stop()
 
-# --- 4. DATA FETCHING ---
+# --- 4. STRICT API FETCHING ---
 def fetch_single_roster(team):
-    try:
-        res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            players = []
-            for group in ['forwards', 'defensemen']:
-                for p in data.get(group, []):
-                    name = f"{p['firstName']['default']} {p['lastName']['default']}"
-                    players.append({'playerId': p.get('id'), 'playerName': name, 'playerName_clean': name.lower().replace('.', '').strip(), 'teamAbbrev': team, 'positionCode': p.get('positionCode', '---')})
-            return players
-    except: return []
-    return []
+    res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
+    res.raise_for_status() # Strict API - No Fallbacks
+    data = res.json()
+    players = []
+    for group in ['forwards', 'defensemen']:
+        for p in data.get(group, []):
+            name = f"{p['firstName']['default']} {p['lastName']['default']}"
+            players.append({'playerId': p.get('id'), 'playerName': name, 'playerName_clean': name.lower().replace('.', '').strip(), 'teamAbbrev': team, 'positionCode': p.get('positionCode', '---')})
+    return players
 
 @st.cache_data(ttl=3600*12)
 def get_all_rosters_parallel():
@@ -154,21 +147,22 @@ def get_all_rosters_parallel():
         results = list(executor.map(fetch_single_roster, TEAM_URLS.keys()))
     return pd.DataFrame([p for sublist in results for p in sublist])
 
-def fetch_player_logs(pid):
+def fetch_playoff_logs(pid):
     try:
-        res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/now", headers=HEADERS, timeout=5)
-        if res.status_code == 200:
-            return {'pid': pid, 'logs': [g for g in res.json().get('gameLog', []) if g.get('gameTypeId') == 3]}
+        # STRICT Playoff Endpoint: 20252026 Season, GameType 3
+        res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/20252026/3", headers=HEADERS, timeout=5)
+        res.raise_for_status()
+        return {'pid': pid, 'logs': res.json().get('gameLog', [])}
     except: return {'pid': pid, 'logs': []}
-    return {'pid': pid, 'logs': []}
 
 @st.cache_data(ttl=1800)
 def get_all_historical_points(pids):
     with ThreadPoolExecutor(max_workers=20) as executor:
-        results = list(executor.map(fetch_player_logs, pids))
+        results = list(executor.map(fetch_playoff_logs, pids))
     
-    today_str = datetime.datetime.now(PT_ZONE).strftime("%Y-%m-%d")
-    yesterday_str = (datetime.datetime.now(PT_ZONE) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
+    yesterday_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    last7_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
     
     data = {}
     for r in results:
@@ -176,7 +170,7 @@ def get_all_historical_points(pids):
         data[pid] = {
             'today': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] == today_str),
             'yesterday': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] == yesterday_str),
-            'last7': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] >= (datetime.datetime.now(PT_ZONE) - datetime.timedelta(days=7)).strftime("%Y-%m-%d"))
+            'last7': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] >= last7_str)
         }
     return data
 
@@ -185,17 +179,17 @@ def get_playoff_status():
     elim, today = set(), []
     try:
         res1 = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026", headers=HEADERS, timeout=5)
-        if res1.status_code == 200:
-            series = res1.json().get('series', []) or [s for r in res1.json().get('rounds', []) for s in r.get('series', [])]
-            for s in series:
-                m = s.get('matchupTeams', [])
-                if len(m) == 2:
-                    if m[0].get('seriesRecord', {}).get('wins', 0) == 4: elim.add(m[1].get('teamAbbrev'))
-                    if m[1].get('seriesRecord', {}).get('wins', 0) == 4: elim.add(m[0].get('teamAbbrev'))
+        res1.raise_for_status()
+        series = res1.json().get('series', []) or [s for r in res1.json().get('rounds', []) for s in r.get('series', [])]
+        for s in series:
+            m = s.get('matchupTeams', [])
+            if len(m) == 2:
+                if m[0].get('seriesRecord', {}).get('wins', 0) == 4: elim.add(m[1].get('teamAbbrev'))
+                if m[1].get('seriesRecord', {}).get('wins', 0) == 4: elim.add(m[0].get('teamAbbrev'))
         res2 = requests.get("https://api-web.nhle.com/v1/schedule/now", headers=HEADERS, timeout=5)
-        if res2.status_code == 200:
-            today_str = datetime.datetime.now(PT_ZONE).strftime("%Y-%m-%d")
-            today = [t['abbrev'] for d in res2.json().get('gameWeek', []) if d['date'] == today_str for g in d.get('games', []) for t in [g['awayTeam'], g['homeTeam']]]
+        res2.raise_for_status()
+        today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
+        today = [t['abbrev'] for d in res2.json().get('gameWeek', []) if d['date'] == today_str for g in d.get('games', []) for t in [g['awayTeam'], g['homeTeam']]]
     except: pass
     return elim, today
 
@@ -224,8 +218,11 @@ try:
     pids = master_df['Player_Id'].dropna().unique()
     points_data = get_all_historical_points(pids)
     
-    res_stats = requests.get("https://api.nhle.com/stats/rest/en/skater/summary", params={"cayenneExp": "gameTypeId=3 and seasonId=20252026"}, headers=HEADERS).json()
-    stat_df = pd.DataFrame(res_stats.get('data', []))
+    # Strict API fetch for Summary
+    res_stats = requests.get("https://api.nhle.com/stats/rest/en/skater/summary", params={"cayenneExp": "gameTypeId=3 and seasonId=20252026"}, headers=HEADERS)
+    res_stats.raise_for_status()
+    
+    stat_df = pd.DataFrame(res_stats.json().get('data', []))
     if not stat_df.empty:
         stat_df = stat_df[['playerId', 'points', 'goals', 'assists', 'gamesPlayed']].rename(columns={'points':'Pts','goals':'G','assists':'A','gamesPlayed':'GP'})
         master_df = pd.merge(master_df, stat_df, left_on='Player_Id', right_on='playerId', how='left').fillna(0)
@@ -242,10 +239,10 @@ try:
     gms = sorted(master_df['GM'].unique().tolist())
 
 except Exception as e:
-    st.error(f"Critical Data Error: {e}")
+    st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -254,15 +251,11 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Bulletproof Navigation Handler
-st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="nav_state", label_visibility="collapsed")
-
-# Safeguard against accidental deselection
-if st.session_state.nav_state is None:
-    st.session_state.nav_state = st.session_state.last_valid_nav
+# Decoupled Navigation
+nav_selection = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
+if nav_selection and nav_selection != st.session_state.nav_state:
+    st.session_state.nav_state = nav_selection
     st.rerun()
-else:
-    st.session_state.last_valid_nav = st.session_state.nav_state
 
 nav = st.session_state.nav_state
 
@@ -283,11 +276,9 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Native Streamlit Button linked to state
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
                 st.session_state.nav_state = "My Team"
-                st.session_state.last_valid_nav = "My Team"
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
@@ -298,15 +289,18 @@ if nav == "League":
         b_cols[8].markdown(f"<div class='cell-text plain-text'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
 
 elif nav == "My Team":
-    # Ensure a valid selection
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
         st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
     
     st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{st.session_state.sel_gm_val}</b>'s roster.</div>", unsafe_allow_html=True)
     
     c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1.2, 1, 1, 1, 1])
-    with c1: st.selectbox("View another team", gms, key="sel_gm_val")
-    with c2: horizon = st.selectbox("Stats", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz1")
+    with c1: 
+        curr = st.selectbox("View another team", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
+        if curr != st.session_state.sel_gm_val:
+            st.session_state.sel_gm_val = curr
+            st.rerun()
+    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz1")
     
     my_df = master_df[master_df['GM'] == st.session_state.sel_gm_val].copy()
     
@@ -332,82 +326,4 @@ elif nav == "My Team":
     for _, r in my_df.iterrows():
         r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
         is_elim = r['Team'] in ELIMINATED
-        t_cls = "eliminated" if is_elim else "plain-text"
-        l_cls = "eliminated" if is_elim else "player-link"
-        fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
-        
-        p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
-        n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-        t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
-        
-        r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-        r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
-        r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
-        r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
-        r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-        r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-        r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-        r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-        r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
-
-elif nav == "All Rosters":
-    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
-    
-    st.markdown(f"<div class='roast-container'>🏆 <b>{gms[0]}</b> and the rest of the league.</div>", unsafe_allow_html=True)
-    
-    c1, c2, c3 = st.columns([1.5, 1.2, 3.3])
-    with c1: 
-        st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
-        if st.session_state.all_rost_jump != "(Select Team)":
-            st.session_state.sel_gm_val = st.session_state.all_rost_jump
-            st.session_state.nav_state = "My Team"
-            st.session_state.last_valid_nav = "My Team"
-            st.session_state.all_rost_jump = "(Select Team)"
-            st.rerun()
-            
-    with c2: horizon = st.selectbox("Stats", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz2")
-    
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
-    st.markdown(f"""
-        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    total_df = master_df.copy()
-    if horizon != 'All Time':
-        days = 1 if horizon == 'Yesterday' else 7
-        h_pts = get_all_historical_points(total_df['Player_Id'].dropna().unique())
-        total_df['Pts'] = total_df['Player_Id'].map(lambda x: h_pts.get(x, {}).get('yesterday' if days==1 else 'last7', 0)).fillna(0).astype(int)
-        for c in ['G','A','GP','Top_Pick']: total_df[c] = "-"
-
-    for g in gms:
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
-        
-        g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
-        
-        t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
-        t_labels = ["Player", "Team", "Pos", "GP", "Points", "G", "A", "Round Picked", "Top Pick/Rnd"]
-        for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
-        
-        for _, r in g_df.iterrows():
-            r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
-            is_elim = r['Team'] in ELIMINATED
-            t_cls = "eliminated" if is_elim else "plain-text"
-            l_cls = "eliminated" if is_elim else "player-link"
-            fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
-            
-            p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
-            n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-            t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
-            
-            r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-            r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
-            r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
-            r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
-            r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-            r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-            r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-            r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-            r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+        t_cls = "eliminated" if is_elim else "
