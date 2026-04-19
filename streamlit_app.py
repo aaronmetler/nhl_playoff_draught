@@ -9,7 +9,7 @@ import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. SESSION INITIALIZATION ---
+# --- 1. SESSION & ROUTING INITIALIZATION ---
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
@@ -64,7 +64,7 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links */
+        /* Invisible Buttons for GM Links (Perfect Alignment) */
         div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
         div.stButton > button {
             border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
@@ -73,7 +73,8 @@ st.markdown("""
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
 
         /* Anchor Links */
-        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 5px; font-weight: bold; }
+        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
+        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
         .anchor-links a:hover { text-decoration: underline; }
         
         /* GM Header with Back to Top */
@@ -132,7 +133,7 @@ if not is_authenticated():
 # --- 4. STRICT API FETCHING ---
 def fetch_single_roster(team):
     res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
-    res.raise_for_status() # Strict API - No Fallbacks
+    res.raise_for_status() 
     data = res.json()
     players = []
     for group in ['forwards', 'defensemen']:
@@ -149,7 +150,6 @@ def get_all_rosters_parallel():
 
 def fetch_playoff_logs(pid):
     try:
-        # STRICT Playoff Endpoint: 20252026 Season, GameType 3
         res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/20252026/3", headers=HEADERS, timeout=5)
         res.raise_for_status()
         return {'pid': pid, 'logs': res.json().get('gameLog', [])}
@@ -163,14 +163,28 @@ def get_all_historical_points(pids):
     today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
     yesterday_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     last7_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+    last14_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=14)).strftime("%Y-%m-%d")
+    last30_str = (datetime.datetime.now(ET_ZONE) - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
     
     data = {}
     for r in results:
         pid, logs = r['pid'], r['logs']
+        
+        def calc_stats(cond):
+            v_logs = [g for g in logs if cond(g['gameDate'])]
+            return {
+                'pts': sum(g.get('goals', 0) + g.get('assists', 0) for g in v_logs),
+                'g': sum(g.get('goals', 0) for g in v_logs),
+                'a': sum(g.get('assists', 0) for g in v_logs),
+                'gp': len(v_logs)
+            }
+
         data[pid] = {
-            'today': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] == today_str),
-            'yesterday': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] == yesterday_str),
-            'last7': sum(g.get('goals', 0) + g.get('assists', 0) for g in logs if g['gameDate'] >= last7_str)
+            'today': calc_stats(lambda d: d == today_str),
+            'yesterday': calc_stats(lambda d: d == yesterday_str),
+            'last7': calc_stats(lambda d: d >= last7_str),
+            'last14': calc_stats(lambda d: d >= last14_str),
+            'last30': calc_stats(lambda d: d >= last30_str)
         }
     return data
 
@@ -218,7 +232,6 @@ try:
     pids = master_df['Player_Id'].dropna().unique()
     points_data = get_all_historical_points(pids)
     
-    # Strict API fetch for Summary
     res_stats = requests.get("https://api.nhle.com/stats/rest/en/skater/summary", params={"cayenneExp": "gameTypeId=3 and seasonId=20252026"}, headers=HEADERS)
     res_stats.raise_for_status()
     
@@ -229,8 +242,8 @@ try:
     else:
         for c in ['Pts','G','A','GP']: master_df[c] = 0
         
-    master_df['Pts_Today'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('today', 0))
-    master_df['Pts_Yest'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('yesterday', 0))
+    master_df['Pts_Today'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('today', {}).get('pts', 0))
+    master_df['Pts_Yest'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('yesterday', {}).get('pts', 0))
     master_df['Rank_Rnd'] = master_df.groupby('Round')['Pts'].rank(method='min', ascending=False).astype(int)
     master_df['Top_Pick'] = master_df['Rank_Rnd'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else "-")
     
@@ -251,7 +264,6 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Decoupled Navigation
 nav_selection = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
 if nav_selection and nav_selection != st.session_state.nav_state:
     st.session_state.nav_state = nav_selection
@@ -261,6 +273,7 @@ nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
 if nav == "League":
+    # Aggregate data exactly from master_df (resolves the mismatch bug)
     lb = master_df.groupby('GM').agg({'GP':'sum','Pts':'sum','G':'sum','A':'sum','Pts_Yest':'sum'}).reset_index().sort_values(['Pts','G'], ascending=False)
     counts = master_df[~master_df['Team'].isin(ELIMINATED)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
@@ -294,28 +307,32 @@ elif nav == "My Team":
     
     st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{st.session_state.sel_gm_val}</b>'s roster.</div>", unsafe_allow_html=True)
     
-    c1, c2, c3, c4, c5, c6 = st.columns([1.5, 1.2, 1, 1, 1, 1])
+    c1, c2, c3, c4, c5, c6, c7 = st.columns([1.4, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
     with c1: 
         curr = st.selectbox("View another team", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
         if curr != st.session_state.sel_gm_val:
             st.session_state.sel_gm_val = curr
             st.rerun()
-    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz1")
+    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz1")
     
     my_df = master_df[master_df['GM'] == st.session_state.sel_gm_val].copy()
     
-    with c3: st.metric("Points Today", int(my_df['Pts_Today'].sum()))
-    with c4: st.metric("Points Yesterday", int(my_df['Pts_Yest'].sum()))
-    with c5: st.metric("Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
-    with c6: st.metric("Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
+    with c3: st.metric("Total Pts", int(my_df['Pts'].sum()))
+    with c4: st.metric("Points Today", int(my_df['Pts_Today'].sum()))
+    with c5: st.metric("Points Yesterday", int(my_df['Pts_Yest'].sum()))
+    with c6: st.metric("Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
+    with c7: st.metric("Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
 
     st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
 
     if horizon != 'All Time':
-        days = 1 if horizon == 'Yesterday' else 7
-        h_pts = get_all_historical_points(my_df['Player_Id'].dropna().unique())
-        my_df['Pts'] = my_df['Player_Id'].map(lambda x: h_pts.get(x, {}).get('yesterday' if days==1 else 'last7', 0)).fillna(0).astype(int)
-        for c in ['G','A','GP','Top_Pick']: my_df[c] = "-"
+        key_map = {'Yesterday':'yesterday', 'Last 7 Days':'last7', 'Last 14 Days':'last14', 'Last 30 Days':'last30'}
+        h_key = key_map[horizon]
+        
+        my_df['Pts'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('pts', 0)).fillna(0).astype(int)
+        my_df['G'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('g', 0)).fillna(0).astype(int)
+        my_df['A'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
+        my_df['GP'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
@@ -347,14 +364,15 @@ elif nav == "My Team":
 elif nav == "All Rosters":
     st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
-    c1, c2 = st.columns([1.5, 8.5])
+    c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
             st.session_state.nav_state = "My Team"
             st.rerun()
-    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz2")
+            
+    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
     
     anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
     st.markdown(f"""
@@ -366,10 +384,13 @@ elif nav == "All Rosters":
     
     total_df = master_df.copy()
     if horizon != 'All Time':
-        days = 1 if horizon == 'Yesterday' else 7
-        h_pts = get_all_historical_points(total_df['Player_Id'].dropna().unique())
-        total_df['Pts'] = total_df['Player_Id'].map(lambda x: h_pts.get(x, {}).get('yesterday' if days==1 else 'last7', 0)).fillna(0).astype(int)
-        for c in ['G','A','GP','Top_Pick']: total_df[c] = "-"
+        key_map = {'Yesterday':'yesterday', 'Last 7 Days':'last7', 'Last 14 Days':'last14', 'Last 30 Days':'last30'}
+        h_key = key_map[horizon]
+        
+        total_df['Pts'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('pts', 0)).fillna(0).astype(int)
+        total_df['G'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('g', 0)).fillna(0).astype(int)
+        total_df['A'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
+        total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
     for g in gms:
         st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
