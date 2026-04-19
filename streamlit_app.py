@@ -31,7 +31,7 @@ st.markdown("""
             margin-bottom: 0.5em;
         }
         
-        /* Roast Box CSS */
+        /* Roast Box CSS - Reduced Padding and Height */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -42,6 +42,7 @@ st.markdown("""
             display: flex;
             align-items: center;
             margin-bottom: 1rem;
+            margin-top: 5px;
         }
         .quote-1, .quote-2 {
             position: absolute;
@@ -353,7 +354,7 @@ def get_teams_playing_today():
     except: pass
     return []
 
-# --- AI ROAST GENERATOR (TTL lowered to 15 mins for better variation) ---
+# --- AI ROAST GENERATOR (Cache can now be cleared via button!) ---
 @st.cache_data(ttl=900) 
 def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_type):
     fallback = f"Meanwhile, {gm_name} is sitting at {pts} points with {eliminated_players} players already golfing."
@@ -396,7 +397,6 @@ def generate_ai_roast(gm_name, pts, active_players, eliminated_players, team_typ
             """
 
         response = model.generate_content(system_prompt)
-        # We removed the fire emoji here as requested!
         return response.text.replace('\n', ' ').strip()
         
     except Exception:
@@ -415,7 +415,7 @@ except:
     st.error("Missing or invalid CSV file.")
     st.stop()
 
-# --- NEW FUZZY MATCHING ENGINE ---
+# --- FUZZY MATCHING ENGINE ---
 def clean_and_match(pick_str, stats_df):
     if pd.isna(pick_str) or str(pick_str).strip() == '': return None
     
@@ -437,7 +437,6 @@ def clean_and_match(pick_str, stats_df):
         team_df = stats_df
         
     if not team_df.empty:
-        # 2. Fuzzy match against the full name on that specific team
         all_team_names = team_df['playerName'].tolist()
         all_team_names_lower = [n.lower() for n in all_team_names]
         matches = difflib.get_close_matches(name_str, all_team_names_lower, n=1, cutoff=0.5)
@@ -447,7 +446,7 @@ def clean_and_match(pick_str, stats_df):
             matched_row = team_df[team_df['playerName'].str.lower() == best_match].iloc[0]
             return matched_row.to_dict()
 
-    # 3. If team fuzzy match failed (e.g. traded player, wrong team typed), fuzzy match against ENTIRE NHL
+    # 2. Global fuzzy match fallback
     all_global_names = stats_df['playerName'].tolist()
     all_global_names_lower = [n.lower() for n in all_global_names]
     global_matches = difflib.get_close_matches(name_str, all_global_names_lower, n=1, cutoff=0.65)
@@ -457,7 +456,7 @@ def clean_and_match(pick_str, stats_df):
         matched_row = stats_df[stats_df['playerName'].str.lower() == best_match].iloc[0]
         return matched_row.to_dict()
     
-    # 4. Ultimate fallback (Player completely missing from NHL database)
+    # 3. Ultimate fallback
     return {'lastName': '', 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': raw_name.title()}
 
 master_list = []
@@ -615,12 +614,19 @@ if nav == "League":
             "normal"
         )
         
-        st.markdown(f"""
-            <div class="roast-container">
-                <div class="quote-1"><b>{leafs_dynamic_quote}</b></div>
-                <div class="quote-2"><b>{worst_gm_quote}</b></div>
-            </div>
-        """, unsafe_allow_html=True)
+        c1, c2 = st.columns([0.85, 0.15])
+        with c1:
+            st.markdown(f"""
+                <div class="roast-container">
+                    <div class="quote-1"><b>{leafs_dynamic_quote}</b></div>
+                    <div class="quote-2"><b>{worst_gm_quote}</b></div>
+                </div>
+            """, unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+            if st.button("🔄 New Roasts", use_container_width=True):
+                generate_ai_roast.clear()
+                st.rerun()
         
         st.markdown(generate_league_html(lb), unsafe_allow_html=True)
 
@@ -640,11 +646,18 @@ elif nav == "My Team":
         "normal"
     )
     
-    st.markdown(f"""
-        <div class="roast-container" style="animation: none;">
-            <div style="color: #0068c9; font-size: 1rem;"><b>{gm_specific_roast}</b></div>
-        </div>
-    """, unsafe_allow_html=True)
+    c1, c2 = st.columns([0.85, 0.15])
+    with c1:
+        st.markdown(f"""
+            <div class="roast-container" style="animation: none;">
+                <div style="color: #0068c9; font-size: 1rem;"><b>{gm_specific_roast}</b></div>
+            </div>
+        """, unsafe_allow_html=True)
+    with c2:
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 New Roast", use_container_width=True):
+            generate_ai_roast.clear()
+            st.rerun()
 
     c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
     
