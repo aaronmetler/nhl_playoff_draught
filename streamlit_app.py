@@ -40,16 +40,6 @@ st.markdown("""
         footer {visibility: hidden;}
         .stApp > header {display: none;}
         
-        /* --- MOBILE SCALING & RESPONSIVENESS --- */
-        @media (max-width: 768px) {
-            [data-testid="stHorizontalBlock"] {
-                flex-direction: row !important;
-                flex-wrap: nowrap !important;
-                overflow-x: auto !important;
-                padding-bottom: 5px;
-            }
-        }
-
         /* --- GENERAL AESTHETICS --- */
         .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
         hr { margin-top: 0.5em; margin-bottom: 0.5em; }
@@ -71,14 +61,12 @@ st.markdown("""
             color: #888; font-weight: bold; font-size: 13px; 
             text-align: center; border-bottom: 2px solid #ddd; 
             padding-bottom: 5px; margin-bottom: 5px;
-            white-space: nowrap;
         }
         .header-left { text-align: left; }
         
         .cell-text { 
             display: flex; align-items: center; justify-content: center;
             height: 40px; font-size: 14px; text-align: center;
-            white-space: nowrap;
         }
         .cell-left { justify-content: flex-start; text-align: left; }
         
@@ -96,6 +84,41 @@ st.markdown("""
             text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
+
+        /* Anchor Links */
+        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
+        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
+        .anchor-links a:hover { text-decoration: underline; }
+        
+        /* GM Header with Back to Top */
+        .gm-header-bar {
+            display: flex; justify-content: space-between; align-items: flex-end; 
+            border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
+        }
+        .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
+        .gm-header-bar a { font-size: 14px; color: #0068c9; text-decoration: none; font-weight: 500; }
+        .gm-header-bar a:hover { text-decoration: underline; }
+        
+        /* --- MOBILE SCALING (Forces everything to fit on screen) --- */
+        @media (max-width: 768px) {
+            [data-testid="stHorizontalBlock"] {
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+            }
+            /* Shrink text and allow wrapping on mobile so it fits the screen */
+            .cell-text, .header-text, div.stButton > button, .anchor-links a {
+                font-size: 10px !important;
+                white-space: normal !important;
+                height: auto !important;
+                min-height: 40px;
+                line-height: 1.2 !important;
+                padding: 0 2px !important;
+            }
+            /* Hide the news doc emoji on mobile to save horizontal space */
+            .news-link {
+                display: none !important;
+            }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -376,6 +399,8 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
+    
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
         if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = "(Select Team)"
@@ -401,28 +426,19 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Anchor Links matching the right alignment
     anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
-    
     st.markdown(f"""
-        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
-            <div style='display: flex; justify-content: space-between; align-items: center;'>
-                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-                <div style='text-align: right;'>{anchor_html}</div>
-            </div>
+        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
         </div>
     """, unsafe_allow_html=True)
     
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        hc1, hc2 = st.columns([9, 1])
-        with hc1:
-            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            st.markdown("<div style='text-align:right; margin-top:15px;'><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
-            
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
+        
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
         t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
