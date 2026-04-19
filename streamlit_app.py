@@ -64,7 +64,7 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links (Perfect Alignment) */
+        /* Invisible Buttons for GM Links */
         div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
         div.stButton > button {
             border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
@@ -130,7 +130,7 @@ if not is_authenticated():
                 else: st.error("Invalid credentials.")
     st.stop()
 
-# --- 4. STRICT API FETCHING ---
+# --- 4. ROCK SOLID API FETCHING ---
 def fetch_single_roster(team):
     res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
     res.raise_for_status() 
@@ -150,6 +150,7 @@ def get_all_rosters_parallel():
 
 def fetch_playoff_logs(pid):
     try:
+        # STRICT Playoff Endpoint: 20252026 Season, GameType 3
         res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/20252026/3", headers=HEADERS, timeout=5)
         res.raise_for_status()
         return {'pid': pid, 'logs': res.json().get('gameLog', [])}
@@ -179,7 +180,9 @@ def get_all_historical_points(pids):
                 'gp': len(v_logs)
             }
 
+        # Single source of truth for ALL stats
         data[pid] = {
+            'all_time': calc_stats(lambda d: True),
             'today': calc_stats(lambda d: d == today_str),
             'yesterday': calc_stats(lambda d: d == yesterday_str),
             'last7': calc_stats(lambda d: d >= last7_str),
@@ -207,7 +210,7 @@ def get_playoff_status():
     except: pass
     return elim, today
 
-# --- 5. CORE LOGIC ---
+# --- 5. DATA PREPARATION ---
 rosters = get_all_rosters_parallel()
 ELIMINATED, PLAYING_TODAY = get_playoff_status()
 
@@ -232,16 +235,12 @@ try:
     pids = master_df['Player_Id'].dropna().unique()
     points_data = get_all_historical_points(pids)
     
-    res_stats = requests.get("https://api.nhle.com/stats/rest/en/skater/summary", params={"cayenneExp": "gameTypeId=3 and seasonId=20252026"}, headers=HEADERS)
-    res_stats.raise_for_status()
+    # Fully map ALL points exclusively from the strict Game Log data (No summary API fallbacks)
+    master_df['Pts'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('pts', 0)).fillna(0).astype(int)
+    master_df['G'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('g', 0)).fillna(0).astype(int)
+    master_df['A'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('a', 0)).fillna(0).astype(int)
+    master_df['GP'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('gp', 0)).fillna(0).astype(int)
     
-    stat_df = pd.DataFrame(res_stats.json().get('data', []))
-    if not stat_df.empty:
-        stat_df = stat_df[['playerId', 'points', 'goals', 'assists', 'gamesPlayed']].rename(columns={'points':'Pts','goals':'G','assists':'A','gamesPlayed':'GP'})
-        master_df = pd.merge(master_df, stat_df, left_on='Player_Id', right_on='playerId', how='left').fillna(0)
-    else:
-        for c in ['Pts','G','A','GP']: master_df[c] = 0
-        
     master_df['Pts_Today'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('today', {}).get('pts', 0))
     master_df['Pts_Yest'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('yesterday', {}).get('pts', 0))
     master_df['Rank_Rnd'] = master_df.groupby('Round')['Pts'].rank(method='min', ascending=False).astype(int)
@@ -255,7 +254,7 @@ except Exception as e:
     st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER (No Logout Link) ---
+# --- 6. UI HEADER ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -264,16 +263,12 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-nav_selection = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
-if nav_selection and nav_selection != st.session_state.nav_state:
-    st.session_state.nav_state = nav_selection
-    st.rerun()
-
-nav = st.session_state.nav_state
+# Smooth Navigation - State applies seamlessly
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
+st.session_state.nav_state = nav
 
 # --- 7. VIEWS ---
 if nav == "League":
-    # Aggregate data exactly from master_df (resolves the mismatch bug)
     lb = master_df.groupby('GM').agg({'GP':'sum','Pts':'sum','G':'sum','A':'sum','Pts_Yest':'sum'}).reset_index().sort_values(['Pts','G'], ascending=False)
     counts = master_df[~master_df['Team'].isin(ELIMINATED)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
