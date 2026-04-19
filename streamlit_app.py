@@ -61,12 +61,14 @@ st.markdown("""
             color: #888; font-weight: bold; font-size: 13px; 
             text-align: center; border-bottom: 2px solid #ddd; 
             padding-bottom: 5px; margin-bottom: 5px;
+            white-space: nowrap;
         }
         .header-left { text-align: left; }
         
         .cell-text { 
             display: flex; align-items: center; justify-content: center;
             height: 40px; font-size: 14px; text-align: center;
+            white-space: nowrap;
         }
         .cell-left { justify-content: flex-start; text-align: left; }
         
@@ -84,11 +86,6 @@ st.markdown("""
             text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
-
-        /* Anchor Links */
-        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
-        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
-        .anchor-links a:hover { text-decoration: underline; }
         
         /* GM Header with Back to Top */
         .gm-header-bar {
@@ -96,28 +93,38 @@ st.markdown("""
             border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
         }
         .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
-        .gm-header-bar a { font-size: 14px; color: #0068c9; text-decoration: none; font-weight: 500; }
-        .gm-header-bar a:hover { text-decoration: underline; }
         
-        /* --- MOBILE SCALING (Forces everything to fit on screen) --- */
+        /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) {
-            [data-testid="stHorizontalBlock"] {
+            /* 1. Target the Data Tables (Rows with 9 columns). Force min-width to prevent vertical squishing. */
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)) {
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;
+                min-width: 650px !important; 
             }
-            /* Shrink text and allow wrapping on mobile so it fits the screen */
+            
+            /* 2. Target Non-Table items (KPIs, Dropdowns). Let them stack/wrap natively to fit screen. */
+            [data-testid="stHorizontalBlock"]:not(:has(> div:nth-child(9))) {
+                flex-direction: row !important;
+                flex-wrap: wrap !important;
+            }
+            
+            /* 3. Allow page-level horizontal panning */
+            .stApp {
+                overflow-x: auto !important;
+            }
+            
+            /* 4. Downscale fonts for better fit */
             .cell-text, .header-text, div.stButton > button, .anchor-links a {
-                font-size: 10px !important;
-                white-space: normal !important;
-                height: auto !important;
-                min-height: 40px;
-                line-height: 1.2 !important;
-                padding: 0 2px !important;
+                font-size: 11px !important;
             }
-            /* Hide the news doc emoji on mobile to save horizontal space */
-            .news-link {
-                display: none !important;
-            }
+            
+            /* Hide non-essential UI decorators to save space */
+            .news-link { display: none !important; }
+            
+            /* Shrink KPIs so they don't dominate the portrait screen */
+            div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
+            div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -399,7 +406,6 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
@@ -426,19 +432,28 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
-    st.markdown(f"""
-        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
-        </div>
-    """, unsafe_allow_html=True)
+    # Streamlit Markdown anchors
+    anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
     
+    st.markdown("➤ 🔥 indicates playing today", unsafe_allow_html=True)
+    
+    col_legend, col_anchors = st.columns([1, 2])
+    with col_legend:
+        st.markdown("➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated", unsafe_allow_html=True)
+    with col_anchors:
+        st.markdown(f"<div style='text-align: right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
+    
+    st.divider()
+
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
-        
+        hc1, hc2 = st.columns([9, 1])
+        with hc1:
+            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
+        with hc2:
+            st.markdown("<div style='text-align:right; margin-top:15px;'>[↑ Back to Top](#metler-playoff-pool)</div>", unsafe_allow_html=True)
+            
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
         t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
