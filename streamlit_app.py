@@ -112,6 +112,11 @@ TEAM_URLS = {
     'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'
 }
 
+# ANTI-BOT CLOUDFLARE BYPASS HEADER
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 def is_authenticated():
     if st.session_state.authenticated: return True
     saved_email = cookie_manager.get('user_email_cookie')
@@ -205,7 +210,7 @@ def get_roster_dictionary():
     roster_dict = {}
     for t in TEAM_URLS.keys():
         try:
-            res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current")
+            res = requests.get(f"https://api-web.nhle.com/v1/roster/{t}/current", headers=HEADERS, timeout=10)
             if res.status_code == 200:
                 data = res.json()
                 for group in ['forwards', 'defensemen', 'goalies']:
@@ -221,13 +226,32 @@ def fetch_live_data():
     base_url_skater = "https://api.nhle.com/stats/rest/en/skater/summary"
     base_url_goalie = "https://api.nhle.com/stats/rest/en/goalie/summary"
     
+    # Safe NHL API Pagination Loop
     def get_data(url, game_type):
-        params = {"isAggregate": "false", "isGame": "false", "start": 0, "limit": 1000, "cayenneExp": f"gameTypeId={game_type} and seasonId=20252026"}
-        try:
-            res = requests.get(url, params=params)
-            if res.status_code == 200: return pd.DataFrame(res.json().get('data', []))
-        except: pass
-        return pd.DataFrame()
+        all_data = []
+        start = 0
+        limit = 100 # NHL officially caps responses at 100 players
+        while True:
+            params = {
+                "isAggregate": "false", 
+                "isGame": "false", 
+                "start": start, 
+                "limit": limit, 
+                "cayenneExp": f"gameTypeId={game_type} and seasonId=20252026"
+            }
+            try:
+                res = requests.get(url, params=params, headers=HEADERS, timeout=10)
+                if res.status_code == 200:
+                    data = res.json().get('data', [])
+                    if not data: break
+                    all_data.extend(data)
+                    if len(data) < limit: break
+                    start += limit
+                else:
+                    break
+            except Exception:
+                break
+        return pd.DataFrame(all_data)
 
     df_p_s = get_data(base_url_skater, 3)
     df_r_s = get_data(base_url_skater, 2)
@@ -242,26 +266,22 @@ def fetch_live_data():
             df.rename(columns={'skaterFullName': 'playerName', 'goalieFullName': 'playerName', 'teamAbbrevs': 'teamAbbrev', 'points': 'totalPoints'}, inplace=True)
             if 'playerName' not in df.columns: df['playerName'] = ''
             df['lastName'] = df['playerName'].apply(lambda x: str(x).split(' ', 1)[-1].lower() if ' ' in str(x) else str(x).lower())
+            
+            # Guarantee numeric stat columns exist
+            for col in ['goals', 'assists', 'totalPoints', 'gamesPlayed']:
+                if col not in df.columns: df[col] = 0
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     if not df_p.empty:
-        if 'goals' in df_p.columns and 'assists' in df_p.columns:
-            df_p['totalPoints'] = df_p['goals'] + df_p['assists']
-            
         if not df_r.empty:
             existing_ids = df_p['playerId'].tolist()
             df_r = df_r[~df_r['playerId'].isin(existing_ids)].copy()
-            df_r['goals'] = 0
-            df_r['assists'] = 0
-            df_r['totalPoints'] = 0
-            df_r['gamesPlayed'] = 0
+            for col in ['goals', 'assists', 'totalPoints', 'gamesPlayed']: df_r[col] = 0
             return pd.concat([df_p, df_r], ignore_index=True)
         return df_p
         
     elif not df_r.empty:
-        df_r['goals'] = 0
-        df_r['assists'] = 0
-        df_r['totalPoints'] = 0
-        df_r['gamesPlayed'] = 0
+        for col in ['goals', 'assists', 'totalPoints', 'gamesPlayed']: df_r[col] = 0
         return df_r
         
     return pd.DataFrame()
@@ -275,7 +295,7 @@ def get_historical_points(player_ids, days):
             hist_pts[pid] = 0
             continue
         try:
-            res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/now")
+            res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/now", headers=HEADERS, timeout=5)
             pts = 0
             if res.status_code == 200:
                 for g in res.json().get('gameLog', []):
@@ -290,7 +310,7 @@ def get_historical_points(player_ids, days):
 def get_eliminated_teams():
     eliminated = set()
     try:
-        res = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026")
+        res = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026", headers=HEADERS, timeout=10)
         if res.status_code == 200:
             data = res.json()
             series_list = data.get('series', [])
@@ -313,7 +333,7 @@ def get_eliminated_teams():
 @st.cache_data(ttl=3600)
 def get_teams_playing_today():
     try:
-        res = requests.get("https://api-web.nhle.com/v1/schedule/now")
+        res = requests.get("https://api-web.nhle.com/v1/schedule/now", headers=HEADERS, timeout=10)
         if res.status_code == 200:
             data = res.json()
             teams = set()
@@ -331,7 +351,7 @@ def get_teams_playing_today():
 def get_daily_headline():
     headline = "NHL playoffs continue with fierce matchups"
     try:
-        resp = requests.get("https://www.espn.com/espn/rss/nhl/news", timeout=3)
+        resp = requests.get("https://www.espn.com/espn/rss/nhl/news", headers=HEADERS, timeout=5)
         if resp.status_code == 200:
             root = ET.fromstring(resp.content)
             items = root.findall('.//item/title')
@@ -397,7 +417,11 @@ def clean_and_match(pick_str, stats_df):
     if stats_df.empty:
         return {'lastName': n_part, 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None, 'playerName': name_str.title()}
     
-    match = stats_df[(stats_df['lastName'].str.contains(n_part, case=False, na=False)) & (stats_df['teamAbbrev'].str.contains(t_part, case=False, na=False))]
+    if t_part:
+        match = stats_df[(stats_df['lastName'].str.contains(n_part, case=False, na=False)) & (stats_df['teamAbbrev'].str.contains(t_part, case=False, na=False))]
+    else:
+        match = pd.DataFrame()
+        
     if not match.empty: return match.iloc[0].to_dict()
     
     match_name_only = stats_df[stats_df['lastName'].str.contains(n_part, case=False, na=False)]
@@ -455,7 +479,6 @@ for index, row in df_raw.iterrows():
 master_df = pd.DataFrame(master_list)
 
 if not master_df.empty:
-    # FORCE ALL STATS TO INTEGERS to prevent catastrophic math crashes!
     master_df['Points'] = pd.to_numeric(master_df['Points'], errors='coerce').fillna(0).astype(int)
     master_df['G'] = pd.to_numeric(master_df['G'], errors='coerce').fillna(0).astype(int)
     master_df['A'] = pd.to_numeric(master_df['A'], errors='coerce').fillna(0).astype(int)
@@ -529,7 +552,6 @@ def generate_league_html(lb_df):
         
     html += "</table>"
     return html
-
 
 # --- 6. UI VIEWS ---
 LEAFS_ROASTS = [
