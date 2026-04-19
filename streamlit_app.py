@@ -326,4 +326,77 @@ elif nav == "My Team":
     for _, r in my_df.iterrows():
         r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
         is_elim = r['Team'] in ELIMINATED
-        t_cls = "eliminated" if is_elim else "
+        t_cls = "eliminated" if is_elim else "plain-text"
+        l_cls = "eliminated" if is_elim else "player-link"
+        fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
+        
+        p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
+        n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
+        t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
+        
+        r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
+        r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
+        r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
+        r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
+        r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
+        r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
+        r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
+        r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
+        r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+
+elif nav == "All Rosters":
+    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
+    
+    c1, c2 = st.columns([1.5, 8.5])
+    with c1: 
+        jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
+        if jump_gm != "(Select Team)":
+            st.session_state.sel_gm_val = jump_gm
+            st.session_state.nav_state = "My Team"
+            st.rerun()
+    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz2")
+    
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
+    st.markdown(f"""
+        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    total_df = master_df.copy()
+    if horizon != 'All Time':
+        days = 1 if horizon == 'Yesterday' else 7
+        h_pts = get_all_historical_points(total_df['Player_Id'].dropna().unique())
+        total_df['Pts'] = total_df['Player_Id'].map(lambda x: h_pts.get(x, {}).get('yesterday' if days==1 else 'last7', 0)).fillna(0).astype(int)
+        for c in ['G','A','GP','Top_Pick']: total_df[c] = "-"
+
+    for g in gms:
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+        
+        g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
+        
+        t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
+        t_labels = ["Player", "Team", "Pos", "GP", "Points", "G", "A", "Round Picked", "Top Pick/Rnd"]
+        for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
+        
+        for _, r in g_df.iterrows():
+            r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
+            is_elim = r['Team'] in ELIMINATED
+            t_cls = "eliminated" if is_elim else "plain-text"
+            l_cls = "eliminated" if is_elim else "player-link"
+            fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
+            
+            p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
+            n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
+            t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
+            
+            r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
+            r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
+            r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
+            r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
+            r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
+            r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
+            r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
+            r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
+            r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
