@@ -15,6 +15,7 @@ if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'avatar' not in st.session_state: st.session_state.avatar = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
+if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -23,6 +24,8 @@ st.markdown("""
     <style>
         .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
         hr { margin-top: 0.5em; margin-bottom: 0.5em; }
+        
+        /* Roast Container */
         .roast-container {
             background-color: rgba(0, 104, 201, 0.08);
             border: 1px solid rgba(0, 104, 201, 0.2);
@@ -34,42 +37,26 @@ st.markdown("""
             align-items: center;
             margin-bottom: 1rem;
         }
-        .quote-1, .quote-2 {
-            position: absolute;
-            width: calc(100% - 2rem);
-            color: #0068c9;
-            font-size: 1rem;
-            animation: fadeSwap 20s infinite;
-        }
-        .quote-1 { animation-delay: 0s; }
-        .quote-2 { animation-delay: 10s; opacity: 0; }
-        @keyframes fadeSwap {
-            0%, 45% { opacity: 1; visibility: visible; }
-            50%, 95% { opacity: 0; visibility: hidden; }
-            100% { opacity: 1; visibility: visible; }
-        }
-        .team-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-bottom: 2rem; }
-        .team-table th { border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 8px; }
-        .team-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
-        .team-table td.text-left, .team-table th.text-left { text-align: left; }
         
-        /* KPI Styling */
+        /* Table Styling - Shared across all views */
+        .pool-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 14px; margin-bottom: 2rem; }
+        .pool-table th { border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 12px 8px; }
+        .pool-table td { border-bottom: 1px solid #eee; padding: 10px 8px; text-align: center; }
+        .pool-table td.text-left, .pool-table th.text-left { text-align: left; }
+        
+        /* Metric Styling */
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
         
-        /* Make the buttons in the table look like links */
+        /* Link styling inside tables */
+        .pool-table a { text-decoration: none; color: #0068c9; font-weight: 500; }
+        .pool-table a:hover { text-decoration: underline; }
+
+        /* Navigation Buttons in Table */
         div.stButton > button {
-            border: none;
-            background: none;
-            padding: 0;
-            color: #0068c9;
-            text-decoration: none;
-            font-weight: 500;
+            border: none; background: none; padding: 0; color: #0068c9;
+            text-decoration: none; font-weight: 500; font-size: 14px;
         }
-        div.stButton > button:hover {
-            text-decoration: underline;
-            background: none;
-            color: #004c99;
-        }
+        div.stButton > button:hover { color: #004c99; text-decoration: underline; background: none; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -143,7 +130,6 @@ def fetch_live_data():
     if not df_p.empty:
         if not df_r.empty:
             df_r = df_r[~df_r['playerId'].isin(df_p['playerId'].tolist())].copy()
-            for col in ['goals', 'assists', 'totalPoints', 'gamesPlayed']: df_r[col] = 0
             return pd.concat([df_p, df_r], ignore_index=True)
         return df_p
     return df_r if not df_r.empty else pd.DataFrame()
@@ -189,21 +175,7 @@ def get_teams_playing_today():
     except: pass
     return []
 
-# --- 5. DYNAMIC GENERAL ROASTS ---
-def get_dynamic_roast(leader_name, pts_lead, worst_name, pts_worst):
-    leader_bank = [
-        f"🏆 {leader_name} is dominating with {pts_lead} points. Must be nice to have a roster that actually shows up.",
-        f"🏆 {leader_name} has {pts_lead} points. Is it a masterclass in drafting, or just standard playoff luck?",
-        f"🏆 Standing at {pts_lead} points, {leader_name} is basically the Tampa Bay of this pool... for now.",
-    ]
-    basement_bank = [
-        f"🚨 {worst_name} is sitting at {pts_worst} points. There's always next year (or the year after).",
-        f"🚨 With only {pts_worst} points, {worst_name} is currently scouting for the 2027 draft.",
-        f"🚨 {worst_name} has {pts_worst} points. Watching the scoreboard must feel like a horror movie.",
-    ]
-    return random.choice(leader_bank), random.choice(basement_bank)
-
-# --- 6. UI HELPERS ---
+# --- 5. UI HELPERS ---
 def get_avatar_uri(gm_check_name):
     if gm_check_name == st.session_state.display_name and st.session_state.get('avatar'):
         b64 = base64.b64encode(st.session_state.avatar).decode()
@@ -212,7 +184,7 @@ def get_avatar_uri(gm_check_name):
     return f"data:image/svg+xml;base64,{base64.b64encode(default_svg.encode('utf-8')).decode('utf-8')}"
 
 def generate_team_table_html(df, eliminated_teams, playing_today):
-    h = "<table class='team-table'><tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Top Pick</th></tr>"
+    h = "<table class='pool-table'><thead><tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Top Pick</th></tr></thead><tbody>"
     for _, r in df.iterrows():
         is_elim = r['Team_Raw'] in eliminated_teams
         is_playing = r['Team_Raw'] in playing_today and not is_elim
@@ -220,9 +192,9 @@ def generate_team_table_html(df, eliminated_teams, playing_today):
         active = " 🔥" if is_playing else ""
         news = f"<a href='https://news.google.com/search?q={r['Player_Name']}+NHL+when:2d' target='_blank' title='Player News' style='color:inherit;'>📄</a>"
         h += f"<tr style='text-decoration: {decor};'><td>{r['Round']}</td><td class='text-left'>{r['Player_Name']} {news}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
-    return h + "</table>"
+    return h + "</tbody></table>"
 
-# --- 7. MAIN HEADER ---
+# --- 6. MAIN HEADER ---
 t_logo, t_title, t_text, t_img, t_menu = st.columns([0.6, 4.9, 3.5, 0.5, 0.5])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -241,10 +213,10 @@ with t_menu:
 
 st.divider()
 
-# Navigation logic
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed", key="main_nav_ctrl")
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed", key="main_nav_ctrl")
+st.session_state.nav_state = nav
 
-# --- 8. DATA PROCESSING ---
+# --- 7. DATA PROCESSING ---
 stats = fetch_live_data()
 ELIMINATED_TEAMS = get_eliminated_teams()
 TEAMS_PLAYING_TODAY = get_teams_playing_today()
@@ -255,15 +227,19 @@ try:
     gms_cols = [c for c in df_raw.columns if c in USER_DB.values()]
 except: st.stop()
 
+# Aggressive Fuzzy Matching Fix
 def clean_and_match(pick_str, stats_df):
     if pd.isna(pick_str) or str(pick_str).strip() == '': return None
     parts = str(pick_str).split('-'); raw_name = parts[0].strip(); t_part = parts[1].strip().upper() if len(parts) > 1 else ""
     t_part = {'TB': 'TBL', 'VEGAS': 'VGK', 'VGS': 'VGK', 'MON': 'MTL', 'WAS': 'WSH'}.get(t_part, t_part)
+    
     lookup_df = stats_df[stats_df['teamAbbrev'] == t_part] if not stats_df.empty and t_part else stats_df
     if not lookup_df.empty:
-        matches = difflib.get_close_matches(raw_name.lower(), lookup_df['playerName'].str.lower().tolist(), n=1, cutoff=0.45)
-        if matches: return lookup_df[lookup_df['playerName'].str.lower() == matches[0]].iloc[0].to_dict()
-    return {'playerName': raw_name.title(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '', 'playerId': None}
+        names_list = lookup_df['playerName'].str.lower().tolist()
+        matches = difflib.get_close_matches(raw_name.lower(), names_list, n=1, cutoff=0.4) # Lower cutoff for higher match rate
+        if matches:
+            return lookup_df[lookup_df['playerName'].str.lower() == matches[0]].iloc[0].to_dict()
+    return {'playerName': raw_name.title(), 'totalPoints': 0, 'goals': 0, 'assists': 0, 'gamesPlayed': 0, 'teamAbbrev': t_part, 'positionCode': '---', 'playerId': None}
 
 master_list = []
 for _, row in df_raw.iterrows():
@@ -273,36 +249,37 @@ for _, row in df_raw.iterrows():
         if not pick or pick.lower() == 'nan': continue
         p = clean_and_match(pick, stats)
         master_list.append({'GM': gm, 'Player_Id': p.get('playerId'), 'Player_Name': p.get('playerName'), 'Team_Raw': p.get('teamAbbrev'), 'Position': p.get('positionCode'), 'Points': p.get('totalPoints', 0), 'G': p.get('goals', 0), 'A': p.get('assists', 0), 'GP': p.get('gamesPlayed', 0), 'Round': str(row['Draft Rounds']).replace("Round", "").strip()})
+
 master_df = pd.DataFrame(master_list)
-master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).astype(int)
+master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
 master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else str(x))
 
 display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
 if st.session_state.display_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
 
-# --- 9. UI VIEWS ---
-if nav == "League":
+# --- 8. UI VIEWS ---
+if st.session_state.nav_state == "League":
     lb = master_df.groupby('GM').agg({'GP': 'sum', 'Points': 'sum', 'G': 'sum', 'A': 'sum'}).reset_index().sort_values(['Points', 'G'], ascending=False)
     counts = master_df[~master_df['Team_Raw'].isin(ELIMINATED_TEAMS)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
     lb['Rank'] = range(1, len(lb)+1)
     lb['Pts Back'] = lb['Points'].max() - lb['Points']
     
-    # Roasts
-    lead_q, base_q = get_dynamic_roast(lb.iloc[0]['GM'], lb.iloc[0]['Points'], lb.iloc[-1]['GM'], lb.iloc[-1]['Points'])
-    st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{lead_q}</b></div><div class='quote-2'><b>{base_q}</b></div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='roast-container'>🚀 <b>{lb.iloc[0]['GM']}</b> is leading the pack. Meanwhile, <b>{lb.iloc[-1]['GM']}</b> is preparing their draft speech for next year.</div>", unsafe_allow_html=True)
 
-    # Leaderboard Table with Navigation Buttons
-    st.markdown("<table class='team-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>", unsafe_allow_html=True)
+    # Re-Styled Leaderboard Table
+    header_html = "<table class='pool-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>"
+    st.markdown(header_html, unsafe_allow_html=True)
+    
     for _, r in lb.iterrows():
-        c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([0.5, 0.5, 1.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0])
+        c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns([0.4, 0.4, 1.8, 0.6, 0.8, 0.6, 0.6, 0.8, 1.0])
         with c1: st.write(f"**{r['Rank']}**")
         with c2: st.markdown(f"<img src='{get_avatar_uri(r['GM'])}' width='25' style='border-radius:50%;'>", unsafe_allow_html=True)
         with c3:
-            if st.button(r['GM'], key=f"nav_{r['GM']}"):
+            if st.button(r['GM'], key=f"btn_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.main_nav_ctrl = "My Team" # Sets the nav for next run
+                st.session_state.nav_state = "My Team"
                 st.rerun()
         with c4: st.write(r['GP'])
         with c5: st.write(f"**{r['Points']}**")
@@ -312,36 +289,38 @@ if nav == "League":
         with c9: st.write(int(r['Rem']))
     st.markdown("</table>", unsafe_allow_html=True)
 
-elif nav == "My Team":
-    current_gm = st.session_state.get('sel_gm_val') or (st.session_state.display_name if st.session_state.display_name in display_gms else display_gms[0])
-    my_preview = master_df[master_df['GM'] == current_gm]
+elif st.session_state.nav_state == "My Team":
+    # Fallback to current user if none selected
+    current_gm = st.session_state.get('sel_gm_val') or st.session_state.display_name
+    if current_gm not in display_gms: current_gm = display_gms[0]
     
-    st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>🔥 Scouting report for {current_gm}: High effort, questionable results.</b></div>", unsafe_allow_html=True)
+    my_df = master_df[master_df['GM'] == current_gm]
+    
+    st.markdown(f"<div class='roast-container'>🔥 <b>{current_gm}</b> has {my_df['Points'].sum()} points. Keep your head on a swivel.</div>", unsafe_allow_html=True)
 
-    c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
-    with c1: 
-        sel_gm = st.selectbox("View Team", display_gms, index=display_gms.index(current_gm) if current_gm in display_gms else 0, key="sel_gm_val")
-    with c2: 
-        time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}
-        stat_filter = st.selectbox("Stats", list(time_options.keys()))
+    c1, c2, c3, c4, c5 = st.columns([2.0, 1.8, 1.2, 1.2, 1.2])
+    with c1:
+        st.session_state.sel_gm_val = st.selectbox("View Team", display_gms, index=display_gms.index(current_gm))
+    with c2:
+        time_horizons = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7}
+        horizon = st.selectbox("Stats Horizon", list(time_horizons.keys()))
     
-    my_df = master_df[master_df['GM'] == sel_gm]
     pids = my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY)]['Player_Id'].dropna()
     p_today = sum(get_historical_points(pids, 0).values()) if not pids.empty else 0
     with c3: st.metric("Points Today", p_today)
-    with c4: st.metric("Players Active Today", len(my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
-    with c5: st.metric("Players Remaining", len(my_df[~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
+    with c4: st.metric("Active Today", len(my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
+    with c5: st.metric("Remaining", len(my_df[~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
 
-    st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
-    
-    if time_options[stat_filter] > 0:
-        hist_data = get_historical_points(my_df['Player_Id'].dropna(), time_options[stat_filter])
-        my_df = my_df.copy(); my_df['Points'] = my_df['Player_Id'].map(hist_data).fillna(0).astype(int); my_df['G'] = "-"; my_df['A'] = "-"; my_df['GP'] = "-"; my_df['Top Pick/Rnd'] = "-"
+    # Apply Horizon Filtering
+    display_df = my_df.copy()
+    if time_horizons[horizon] > 0:
+        hist_data = get_historical_points(display_df['Player_Id'].dropna(), time_horizons[horizon])
+        display_df['Points'] = display_df['Player_Id'].map(hist_data).fillna(0).astype(int)
+        display_df['G'] = "-"; display_df['A'] = "-"; display_df['GP'] = "-"; display_df['Top Pick/Rnd'] = "-"
 
-    st.markdown(generate_team_table_html(my_df, ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
+    st.markdown(generate_team_table_html(display_df, ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
 
-elif nav == "All Rosters":
-    st.markdown("<p style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
+elif st.session_state.nav_state == "All Rosters":
     for g in display_gms:
         st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
         st.markdown(generate_team_table_html(master_df[master_df['GM'] == g], ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
