@@ -36,7 +36,25 @@ st.markdown("""
         .pool-table td { border-bottom: 1px solid #eee; padding: 10px 8px; text-align: center; vertical-align: middle; }
         .pool-table td.text-left, .pool-table th.text-left { text-align: left; }
         
-        div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
+        /* Metric Alignment - Centering both label and value */
+        [data-testid="stMetric"] {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        [data-testid="stMetricLabel"] {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        div[data-testid="stMetricValue"] { 
+            font-size: 1.8rem; 
+            color: #0068c9; 
+            text-align: center; 
+            width: 100%;
+        }
+
         .gm-label { color: #0068c9; font-weight: 600; }
     </style>
 """, unsafe_allow_html=True)
@@ -80,7 +98,7 @@ if not st.session_state.authenticated:
                 else: st.error("Invalid credentials.")
     st.stop()
 
-# --- 4. DATA FETCHING (STRICT PLAYOFFS) ---
+# --- 4. DATA FETCHING ---
 @st.cache_data(ttl=1800)
 def fetch_live_playoff_data():
     base_url = "https://api.nhle.com/stats/rest/en/skater/summary"
@@ -195,9 +213,11 @@ master_df = pd.DataFrame(master_list)
 master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
 master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else str(x))
 
-display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
 if st.session_state.display_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
+    display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
+else:
+    display_gms = sorted(gms_cols)
 
 # --- 7. UI VIEWS ---
 if nav == "League":
@@ -207,21 +227,19 @@ if nav == "League":
     lb['Rank'] = range(1, len(lb)+1)
     lb['Pts Back'] = lb['Points'].max() - lb['Points']
     
-    st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> is currently dominating. Meanwhile, <b>{lb.iloc[-1]['GM']}</b> is just happy to be here.</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> is the team to beat. <b>{lb.iloc[-1]['GM']}</b> has some work to do.</div>", unsafe_allow_html=True)
 
-    lb_html = "<table class='pool-table'><tr><th>Rank</th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>"
+    lb_html = "<table class='pool-table'><tr><th>Rank</th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining Players</th></tr>"
     for _, r in lb.iterrows():
         lb_html += f"<tr><td>{r['Rank']}</td><td class='text-left'><span class='gm-label'>{r['GM']}</span></td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Pts Back']}</td><td>{int(r['Rem'])}</td></tr>"
     st.markdown(lb_html + "</table>", unsafe_allow_html=True)
 
 elif nav == "My Team":
-    # Selection logic
     current_gm = st.session_state.get('view_gm', st.session_state.display_name if st.session_state.display_name in display_gms else display_gms[0])
     my_df_total = master_df[master_df['GM'] == current_gm]
     
-    st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{current_gm}</b>'s roster. Total Playoff Points: {my_df_total['Points'].sum()}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{current_gm}</b>'s roster.</div>", unsafe_allow_html=True)
 
-    # --- FILTER ROW ---
     c1, c2, c3, c4, c5 = st.columns([1.5, 1.2, 1, 1, 1])
     with c1:
         current_gm = st.selectbox("View another team", display_gms, index=display_gms.index(current_gm), key="view_gm")
