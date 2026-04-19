@@ -17,13 +17,14 @@ if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
 # Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
+if 'nav_override' not in st.session_state: st.session_state.nav_override = None
 if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
 if 'is_jump' not in st.session_state: st.session_state.is_jump = False
 
 # Handle Safe URL Navigation (Deep Linking)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.main_nav = "My Team"
+        st.session_state.nav_override = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
         st.session_state.is_jump = True
     st.query_params.clear()
@@ -33,6 +34,25 @@ st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="�
 
 st.markdown("""
     <style>
+        /* --- PRIVACY & WHITE-LABELING --- */
+        /* Hide Streamlit Menu, GitHub link, Header, and Footer */
+        #MainMenu {visibility: hidden;}
+        header {visibility: hidden;}
+        footer {visibility: hidden;}
+        .stApp > header {display: none;}
+        
+        /* --- MOBILE SCALING & RESPONSIVENESS --- */
+        /* Prevent columns from stacking vertically on mobile. Forces horizontal scroll. */
+        @media (max-width: 768px) {
+            [data-testid="stHorizontalBlock"] {
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                padding-bottom: 5px;
+            }
+        }
+
+        /* --- GENERAL AESTHETICS --- */
         .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
         hr { margin-top: 0.5em; margin-bottom: 0.5em; }
         
@@ -53,12 +73,14 @@ st.markdown("""
             color: #888; font-weight: bold; font-size: 13px; 
             text-align: center; border-bottom: 2px solid #ddd; 
             padding-bottom: 5px; margin-bottom: 5px;
+            white-space: nowrap; /* Prevents headers from breaking on mobile */
         }
         .header-left { text-align: left; }
         
         .cell-text { 
             display: flex; align-items: center; justify-content: center;
             height: 40px; font-size: 14px; text-align: center;
+            white-space: nowrap; /* Prevents data from breaking on mobile */
         }
         .cell-left { justify-content: flex-start; text-align: left; }
         
@@ -76,6 +98,11 @@ st.markdown("""
             text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
+
+        /* Anchor Links */
+        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
+        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
+        .anchor-links a:hover { text-decoration: underline; }
         
         /* GM Header with Back to Top */
         .gm-header-bar {
@@ -83,6 +110,8 @@ st.markdown("""
             border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
         }
         .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
+        .gm-header-bar a { font-size: 14px; color: #0068c9; text-decoration: none; font-weight: 500; }
+        .gm-header-bar a:hover { text-decoration: underline; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -112,7 +141,8 @@ def is_authenticated():
 if not is_authenticated():
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.title("🏒 Playoff Pool Login")
+        # Updated Login Header
+        st.title("🏒 Metler Playoff Pool Login")
         with st.form("login"):
             saved = cookie_manager.get('saved_email_input') or ""
             email = st.text_input("Email", value=saved).lower().strip()
@@ -249,7 +279,7 @@ except Exception as e:
     st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -258,15 +288,19 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# --- DIRECT WIDGET KEY CONTROL (Fixes first-click bugs) ---
+# --- NAVIGATION SYSTEM (State Overrides & Jump Detection) ---
+if st.session_state.nav_override:
+    st.session_state.main_nav = st.session_state.nav_override
+    st.session_state.nav_override = None
+
 nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="main_nav", label_visibility="collapsed")
 
-# Safeguard logic to manage state seamlessly between tabs
+# Safeguard logic: Only reset to Logged In User if they explicitly clicked the 'My Team' tab natively.
 if nav == "My Team" and st.session_state.last_nav != "My Team":
     if st.session_state.is_jump:
-        st.session_state.is_jump = False  # Consume jump flag to keep selected GM
+        st.session_state.is_jump = False  # Consume the jump flag
     else:
-        st.session_state.sel_gm_val = st.session_state.display_name  # Reset to logged-in user if clicked manually
+        st.session_state.sel_gm_val = st.session_state.display_name  # Reset to user
 
 st.session_state.last_nav = nav
 
@@ -287,10 +321,9 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # By directly modifying main_nav, the next run executes instantly and flawlessly
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.main_nav = "My Team"
+                st.session_state.nav_override = "My Team"
                 st.session_state.is_jump = True
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
@@ -370,7 +403,7 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.main_nav = "My Team"
+            st.session_state.nav_override = "My Team"
             st.session_state.is_jump = True
             st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
@@ -401,7 +434,6 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native HTML Jump Anchor with no target to avoid Streamlit page reloads
         st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page' style='font-size: 14px; color: #0068c9; text-decoration: none;'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
