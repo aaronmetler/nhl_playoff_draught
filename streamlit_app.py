@@ -76,7 +76,6 @@ if not is_authenticated():
     with c2:
         st.title("🏒 Playoff Pool Login")
         with st.form("login_form"):
-            # Bring back Remember Me functionality
             saved_email_val = cookie_manager.get('saved_email_input') or ""
             email = st.text_input("Email", value=saved_email_val).lower().strip()
             pwd = st.text_input("Password", type="password")
@@ -180,17 +179,18 @@ def get_teams_playing_today():
 
 # --- 5. UI HELPERS ---
 def generate_team_table_html(df, eliminated_teams, playing_today):
-    h = "<table class='pool-table'><thead><tr><th class='text-left'>Round</th><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Top Pick</th></tr></thead><tbody>"
+    # HEADER MODIFIED: Round moved to 2nd last, Top Pick renamed to Top Pick/Rnd
+    h = "<table class='pool-table'><thead><tr><th class='text-left'>Player</th><th>Team</th><th>Pos</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th class='text-left'>Round</th><th>Top Pick/Rnd</th></tr></thead><tbody>"
     for _, r in df.iterrows():
         is_elim = r['Team_Raw'] in eliminated_teams
         is_playing = r['Team_Raw'] in playing_today and not is_elim
         decor = "line-through" if is_elim else "none"
         active = " 🔥" if is_playing else ""
-        # Restore News Doc Emoji link
         news_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ', '+')}+NHL+when:2d"
         news_link = f"<a href='{news_url}' target='_blank' class='news-link' title='Player News'>📄</a>"
         
-        h += f"<tr style='text-decoration: {decor};'><td>{r['Round']}</td><td class='text-left'>{r['Player_Name']}{news_link}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
+        # ROW MODIFIED: Column order changed to match header
+        h += f"<tr style='text-decoration: {decor};'><td class='text-left'>{r['Player_Name']}{news_link}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td class='text-left'>{r['Round']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
     return h + "</tbody></table>"
 
 # --- 6. MAIN HEADER ---
@@ -201,7 +201,6 @@ with t_title: st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; f
 with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 with t_menu:
     with st.popover("⚙️ Settings"):
-        # Relabel Display Name field
         new_disp = st.text_input("Change Display Name", value=st.session_state.display_name)
         if st.button("Update"): st.session_state.display_name = new_disp; st.rerun()
         if st.button("Log Out"): 
@@ -261,7 +260,7 @@ for _, row in df_raw.iterrows():
 
 master_df = pd.DataFrame(master_list)
 master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).fillna(0).astype(int)
-master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else str(x))
+master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==3 else "🥉 3" if x==3 else str(x))
 
 if st.session_state.display_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
@@ -308,12 +307,11 @@ elif nav == "My Team":
         disp_df['Points'] = disp_df['Player_Id'].map(hist_data).fillna(0).astype(int)
         disp_df['G'] = "-"; disp_df['A'] = "-"; disp_df['GP'] = "-"; disp_df['Top Pick/Rnd'] = "-"
 
-    # SORT BY TOTAL POINTS DESC
     disp_df = disp_df.sort_values(by='Points', ascending=False)
-
     st.markdown(generate_team_table_html(disp_df, ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<p style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
     for g in sorted(master_df['GM'].unique().tolist()):
         st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
         g_df = master_df[master_df['GM'] == g].sort_values(by='Points', ascending=False)
