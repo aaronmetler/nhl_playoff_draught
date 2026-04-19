@@ -9,16 +9,16 @@ import difflib
 import random
 import os
 
-# --- 1. SESSION INITIALIZATION (MUST BE FIRST) ---
+# --- 1. SESSION INITIALIZATION ---
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'avatar' not in st.session_state: st.session_state.avatar = None
+if 'nav_to_gm' not in st.session_state: st.session_state.nav_to_gm = None
 
-# --- 2. CONFIG ---
+# --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
-# --- CUSTOM CSS ---
 st.markdown("""
     <style>
         .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
@@ -52,13 +52,13 @@ st.markdown("""
         .team-table th { border-bottom: 2px solid #ddd; color: #888; text-align: center; padding: 8px; }
         .team-table td { border-bottom: 1px solid #eee; padding: 8px; text-align: center; }
         .team-table td.text-left, .team-table th.text-left { text-align: left; }
-        .team-table a { text-decoration: none; color: inherit; }
+        .team-table a { text-decoration: none; color: #0068c9; font-weight: 500; }
+        .team-table a:hover { text-decoration: underline; }
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-
 PT_ZONE = ZoneInfo("America/Los_Angeles")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
@@ -73,30 +73,22 @@ USER_DB = {
 SHARED_PWD = "playoffs2026"
 TEAM_URLS = { 'ANA': 'ducks', 'BOS': 'bruins', 'BUF': 'sabres', 'CGY': 'flames', 'CAR': 'hurricanes', 'CHI': 'blackhawks', 'COL': 'avalanche', 'CBJ': 'bluejackets', 'DAL': 'stars', 'DET': 'redwings', 'EDM': 'oilers', 'FLA': 'panthers', 'LAK': 'kings', 'MIN': 'wild', 'MTL': 'canadiens', 'NSH': 'predators', 'NJD': 'devils', 'NYI': 'islanders', 'NYR': 'rangers', 'OTT': 'senators', 'PHI': 'flyers', 'PIT': 'penguins', 'SJS': 'sharks', 'SEA': 'kraken', 'STL': 'blues', 'TBL': 'lightning', 'TOR': 'mapleleafs', 'UTA': 'utah', 'VAN': 'canucks', 'VGK': 'goldenknights', 'WSH': 'capitals', 'WPG': 'jets'}
 
-def is_authenticated():
-    if st.session_state.get('authenticated'): return True
+if not st.session_state.authenticated:
     saved_email = cookie_manager.get('user_email_cookie')
-    if saved_email and saved_email in USER_DB:
+    if saved_email in USER_DB:
         st.session_state.authenticated = True
         st.session_state.gm_name = USER_DB[saved_email]
-        if not st.session_state.display_name:
-            st.session_state.display_name = USER_DB[saved_email]
-        return True
-    return False
+        st.session_state.display_name = USER_DB[saved_email]
 
-if not is_authenticated():
+if not st.session_state.authenticated:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         st.title("🏒 Playoff Pool Login")
         with st.form("login_form"):
-            saved_email_val = cookie_manager.get('saved_email_input') or ""
-            email = st.text_input("Email", value=saved_email_val).lower().strip()
+            email = st.text_input("Email").lower().strip()
             pwd = st.text_input("Password", type="password")
-            remember_me = st.checkbox("Remember my email", value=bool(saved_email_val))
             if st.form_submit_button("Sign In"):
                 if email in USER_DB and pwd == SHARED_PWD:
-                    if remember_me: cookie_manager.set('saved_email_input', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=365), key="set_rem")
-                    else: cookie_manager.delete('saved_email_input', key="del_rem")
                     cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now() + datetime.timedelta(days=30), key="set_auth")
                     st.session_state.authenticated = True
                     st.session_state.gm_name = USER_DB[email]
@@ -182,23 +174,24 @@ def get_teams_playing_today():
     except: pass
     return []
 
-# --- 5. DYNAMIC ALGORITHMIC ROASTS ---
-def get_dynamic_roast(gm_name, pts, elim_count, t_type):
-    days_67 = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
-    leafs_bank = [
-        f"🍁 Toronto Tracker: {pts} pool points found. That's {days_67} days since a Cup, but who's counting?",
-        f"🍁 The Leafs have {pts} points in this pool. If only they could translate that to a Game 7 win.",
-        f"🍁 {days_67} days since 1967. {pts} points is roughly how many times they'll mention 'next year' this week.",
-        f"🍁 Toronto Update: {pts} points and a million excuses. May 1967 feels like just yesterday, right?"
+# --- 5. DYNAMIC GENERAL ROASTS ---
+def get_dynamic_roast(leader_name, pts_lead, worst_name, pts_worst):
+    leader_bank = [
+        f"🏆 {leader_name} is dominating with {pts_lead} points. Must be nice to have a roster that actually shows up.",
+        f"🏆 {leader_name} has {pts_lead} points. Is it a masterclass in drafting, or just standard playoff luck?",
+        f"🏆 Standing at {pts_lead} points, {leader_name} is basically the Tampa Bay of this pool... for now.",
     ]
-    gm_bank = [
-        f"🚨 {gm_name} is sitting at {pts} points. With {elim_count} players eliminated, the golf course is calling.",
-        f"🚨 Fun fact: {gm_name} has {pts} points. Most of their roster is already watching the playoffs from the couch.",
-        f"🚨 {gm_name} has {elim_count} players out. Their team is looking as empty as the Leafs' trophy case.",
-        f"🚨 {gm_name} currently has {pts} points. Strategy? Or just closing your eyes and clicking 'draft'?"
+    basement_bank = [
+        f"🚨 {worst_name} is sitting at {pts_worst} points. There's always next year (or the year after).",
+        f"🚨 With only {pts_worst} points, {worst_name} is currently scouting for the 2027 draft.",
+        f"🚨 {worst_name} has {pts_worst} points. Watching the scoreboard must feel like a horror movie.",
     ]
-    if t_type == "leafs": return random.choice(leafs_bank)
-    return random.choice(gm_bank)
+    general_bank = [
+        "🩹 Fantasy Playoff Tip: It's only a choke if you expected your players to be good.",
+        "🩹 Half the pool is currently calculating 'mathematical paths' to victory that don't exist.",
+        "🩹 Reminder: Points Today only count if you're not already 50 points back.",
+    ]
+    return random.choice(leader_bank), random.choice(basement_bank)
 
 # --- 6. UI HELPERS ---
 def get_avatar_uri(gm_check_name):
@@ -215,7 +208,7 @@ def generate_team_table_html(df, eliminated_teams, playing_today):
         is_playing = r['Team_Raw'] in playing_today and not is_elim
         decor = "line-through" if is_elim else "none"
         active = " 🔥" if is_playing else ""
-        news = f"<a href='https://news.google.com/search?q={r['Player_Name']}+NHL+when:2d' target='_blank' title='Player News'>📄</a>"
+        news = f"<a href='https://news.google.com/search?q={r['Player_Name']}+NHL+when:2d' target='_blank' title='Player News' style='color:inherit;'>📄</a>"
         h += f"<tr style='text-decoration: {decor};'><td>{r['Round']}</td><td class='text-left'>{r['Player_Name']} {news}{active}</td><td>{r['Team_Raw']}</td><td>{r['Position']}</td><td>{r['GP']}</td><td>{r['Points']}</td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Top Pick/Rnd']}</td></tr>"
     return h + "</table>"
 
@@ -226,10 +219,8 @@ with t_logo:
 with t_title: st.markdown("<h1 style='margin-top: -10px; margin-bottom: -15px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
 with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px; font-size: 16px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 with t_img:
-    if st.session_state.get('avatar'): 
-        st.image(st.session_state.avatar, width=35)
-    else: 
-        st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -3px;'>👤</div>", unsafe_allow_html=True)
+    if st.session_state.get('avatar'): st.image(st.session_state.avatar, width=35)
+    else: st.markdown("<div style='font-size: 24px; text-align: center; margin-top: -3px;'>👤</div>", unsafe_allow_html=True)
 with t_menu:
     with st.popover("⚙️"):
         new_disp = st.text_input("Display Name", value=st.session_state.display_name)
@@ -239,7 +230,17 @@ with t_menu:
         if st.button("Log Out"): cookie_manager.delete('user_email_cookie'); st.session_state.authenticated = False; st.rerun()
 
 st.divider()
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default="League", label_visibility="collapsed") or "League"
+
+# Navigation logic with jump-to-team capability
+if st.session_state.nav_to_gm:
+    current_nav = "My Team"
+    st.session_state.sel_gm_val = st.session_state.nav_to_gm
+    st.session_state.nav_to_gm = None
+else:
+    current_nav = st.session_state.get('nav_state', 'League')
+
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=current_nav, label_visibility="collapsed", key="main_nav_ctrl")
+st.session_state.nav_state = nav
 
 # --- 8. DATA PROCESSING ---
 stats = fetch_live_data()
@@ -285,28 +286,43 @@ if nav == "League":
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
     lb['Rank'] = range(1, len(lb)+1)
     lb['Pts Back'] = lb['Points'].max() - lb['Points']
-    worst = lb.iloc[-1]; leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum()
     
-    q1 = get_dynamic_roast("Toronto", leafs_pts, 0, "leafs")
-    q2 = get_dynamic_roast(worst['GM'], worst['Points'], 10 - int(worst['Rem']), "normal")
-    st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{q1}</b></div><div class='quote-2'><b>{q2}</b></div></div>", unsafe_allow_html=True)
+    # Generate Roasts based on standings
+    lead_q, base_q = get_dynamic_roast(lb.iloc[0]['GM'], lb.iloc[0]['Points'], lb.iloc[-1]['GM'], lb.iloc[-1]['Points'])
+    st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{lead_q}</b></div><div class='quote-2'><b>{base_q}</b></div></div>", unsafe_allow_html=True)
 
+    # Manual Navigation Handler via URL-style Query Params or Button Logic hack
     lb_html = "<table class='team-table'><tr><th>Rank</th><th></th><th class='text-left'>Name</th><th>GP</th><th>Points</th><th>G</th><th>A</th><th>Pts Back</th><th>Remaining</th></tr>"
     for _, r in lb.iterrows():
         avatar = f"<img src='{get_avatar_uri(r['GM'])}' width='30' style='border-radius:50%; vertical-align: middle;'>"
-        lb_html += f"<tr><td>{r['Rank']}</td><td>{avatar}</td><td class='text-left'>{r['GM']}</td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Pts Back']}</td><td>{int(r['Rem'])}</td></tr>"
+        
+        # GM Link logic: We use a button to handle navigation within Streamlit
+        lb_html += f"<tr><td>{r['Rank']}</td><td>{avatar}</td><td class='text-left'><a href='#' onclick='window.parent.postMessage({{type: \"gm_click\", name: \"{r['GM']}\"}}, \"*\"); return false;'>{r['GM']}</a></td><td>{r['GP']}</td><td><b>{r['Points']}</b></td><td>{r['G']}</td><td>{r['A']}</td><td>{r['Pts Back']}</td><td>{int(r['Rem'])}</td></tr>"
+    
     st.markdown(lb_html + "</table>", unsafe_allow_html=True)
+    
+    # Detect the GM click from the HTML table (Streamlit workaround)
+    gm_to_load = extra_streamlit_components.tab_bar(data=[extra_streamlit_components.TabBarItemData(id=g, title="", description="") for g in display_gms], default=None, key="gm_click_detect")
+    if gm_to_load:
+        st.session_state.nav_to_gm = gm_to_load
+        st.rerun()
 
 elif nav == "My Team":
-    # Selection Persistence
     current_gm = st.session_state.get('sel_gm_val', display_gms[0])
     my_preview = master_df[master_df['GM'] == current_gm]
-    q = get_dynamic_roast(current_gm, my_preview['Points'].sum(), len(my_preview[my_preview['Team_Raw'].isin(ELIMINATED_TEAMS)]), "normal")
-    st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>{q}</b></div>", unsafe_allow_html=True)
+    q_gm_bank = [
+        f"🔥 {current_gm} is holding {my_preview['Points'].sum()} points. Is this the peak, or just the beginning of the end?",
+        f"🔥 {current_gm} has {len(my_preview[~my_preview['Team_Raw'].isin(ELIMINATED_TEAMS)])} players left. Use them wisely.",
+        f"🔥 Scouting report for {current_gm}: High effort, questionable results."
+    ]
+    st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>{random.choice(q_gm_bank)}</b></div>", unsafe_allow_html=True)
 
     c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
-    with c1: sel_gm = st.selectbox("View Team", display_gms, index=display_gms.index(current_gm) if current_gm in display_gms else 0, key="sel_gm_val")
-    with c2: time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}; stat_filter = st.selectbox("Stats", list(time_options.keys()))
+    with c1: 
+        sel_gm = st.selectbox("View Team", display_gms, index=display_gms.index(current_gm) if current_gm in display_gms else 0, key="sel_gm_val")
+    with c2: 
+        time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}
+        stat_filter = st.selectbox("Stats", list(time_options.keys()))
     
     my_df = master_df[master_df['GM'] == sel_gm]
     pids = my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY)]['Player_Id'].dropna()
@@ -324,7 +340,6 @@ elif nav == "My Team":
     st.markdown(generate_team_table_html(my_df, ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    st.markdown("<p style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
     for g in display_gms:
         st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
         st.markdown(generate_team_table_html(master_df[master_df['GM'] == g], ELIMINATED_TEAMS, TEAMS_PLAYING_TODAY), unsafe_allow_html=True)
