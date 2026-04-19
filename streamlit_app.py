@@ -15,13 +15,15 @@ if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
-# We use a proxy variable for navigation to avoid widget key conflicts
-if 'proxy_nav' not in st.session_state: st.session_state.proxy_nav = 'League'
+# Bulletproof Navigation State Management
+if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
+if 'nav_override' not in st.session_state: st.session_state.nav_override = None
+if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
 
-# Handle URL Navigation (This is the safe way to programmatically navigate)
+# Handle Safe URL Navigation (Deep Linking)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.proxy_nav = "My Team"
+        st.session_state.nav_override = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
@@ -74,7 +76,7 @@ st.markdown("""
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
 
-        /* Anchor Links */
+        /* Anchor Links - target='_self' fixes the Streamlit routing block */
         .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
         .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
         .anchor-links a:hover { text-decoration: underline; }
@@ -152,7 +154,6 @@ def get_all_rosters_parallel():
 
 def fetch_playoff_logs(pid):
     try:
-        # STRICT Playoff Endpoint: 20252026 Season, GameType 3
         res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/20252026/3", headers=HEADERS, timeout=5)
         res.raise_for_status()
         return {'pid': pid, 'logs': res.json().get('gameLog', [])}
@@ -182,7 +183,6 @@ def get_all_historical_points(pids):
                 'gp': len(v_logs)
             }
 
-        # Single source of truth for ALL stats
         data[pid] = {
             'all_time': calc_stats(lambda d: True),
             'today': calc_stats(lambda d: d == today_str),
@@ -256,7 +256,7 @@ except Exception as e:
     st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -265,16 +265,20 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# --- SAFE NAVIGATION SYSTEM ---
-selected_tab = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.proxy_nav, label_visibility="collapsed")
-if selected_tab:
-    # Navigation Transition Detector: Re-centers the view if the user clicks "My Team" natively
-    if selected_tab == "My Team" and st.session_state.proxy_nav != "My Team":
-        st.session_state.sel_gm_val = st.session_state.display_name
-        
-    st.session_state.proxy_nav = selected_tab
+# --- BULLETPROOF NAVIGATION OVERRIDE LOGIC ---
+# If a button/link programmatically requested a tab switch, we apply it here before the widget renders
+if st.session_state.nav_override:
+    st.session_state.main_nav = st.session_state.nav_override
+    st.session_state.nav_override = None
 
-nav = st.session_state.proxy_nav
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="main_nav", label_visibility="collapsed")
+
+# Safeguard if user manually switches tabs
+if nav == "My Team" and st.session_state.last_nav != "My Team":
+    # User clicked the My Team tab natively -> reset their team view to their own
+    st.session_state.sel_gm_val = st.session_state.display_name
+
+st.session_state.last_nav = nav
 
 # --- 7. VIEWS ---
 if nav == "League":
@@ -293,10 +297,10 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Native GM link routing bypasses the transition detector
+            # Trigger the safe override flag instead of mutating the bound widget key directly
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.proxy_nav = "My Team"
+                st.session_state.nav_override = "My Team"
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
@@ -374,7 +378,8 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.proxy_nav = "My Team"
+            # Safe Override Trigger
+            st.session_state.nav_override = "My Team"
             st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
@@ -393,7 +398,8 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in sorted_gms])
+    # Target='_self' fixes the Streamlit Anchor block
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' target='_self'>{g}</a>" for g in sorted_gms])
     st.markdown(f"""
         <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
             <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
@@ -404,7 +410,7 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#top-of-page' target='_self'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
