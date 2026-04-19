@@ -14,12 +14,14 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
 
-# Handle URL Navigation (from League Table buttons)
+# We use a proxy variable for navigation to avoid widget key conflicts
+if 'proxy_nav' not in st.session_state: st.session_state.proxy_nav = 'League'
+
+# Handle URL Navigation (This is the safe way to programmatically navigate)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.nav_state = "My Team"
+        st.session_state.proxy_nav = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
@@ -150,6 +152,7 @@ def get_all_rosters_parallel():
 
 def fetch_playoff_logs(pid):
     try:
+        # STRICT Playoff Endpoint: 20252026 Season, GameType 3
         res = requests.get(f"https://api-web.nhle.com/v1/player/{pid}/game-log/20252026/3", headers=HEADERS, timeout=5)
         res.raise_for_status()
         return {'pid': pid, 'logs': res.json().get('gameLog', [])}
@@ -179,6 +182,7 @@ def get_all_historical_points(pids):
                 'gp': len(v_logs)
             }
 
+        # Single source of truth for ALL stats
         data[pid] = {
             'all_time': calc_stats(lambda d: True),
             'today': calc_stats(lambda d: d == today_str),
@@ -233,6 +237,7 @@ try:
     pids = master_df['Player_Id'].dropna().unique()
     points_data = get_all_historical_points(pids)
     
+    # Map points directly from Game Logs
     master_df['Pts'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('pts', 0)).fillna(0).astype(int)
     master_df['G'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('g', 0)).fillna(0).astype(int)
     master_df['A'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('a', 0)).fillna(0).astype(int)
@@ -251,7 +256,7 @@ except Exception as e:
     st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER (No Logout Link) ---
+# --- 6. UI HEADER ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -260,13 +265,16 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Smooth Navigation
-nav_selection = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
-if nav_selection and nav_selection != st.session_state.nav_state:
-    st.session_state.nav_state = nav_selection
-    st.rerun()
+# --- SAFE NAVIGATION SYSTEM ---
+selected_tab = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.proxy_nav, label_visibility="collapsed")
+if selected_tab:
+    # Navigation Transition Detector: Re-centers the view if the user clicks "My Team" natively
+    if selected_tab == "My Team" and st.session_state.proxy_nav != "My Team":
+        st.session_state.sel_gm_val = st.session_state.display_name
+        
+    st.session_state.proxy_nav = selected_tab
 
-nav = st.session_state.nav_state
+nav = st.session_state.proxy_nav
 
 # --- 7. VIEWS ---
 if nav == "League":
@@ -285,9 +293,10 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
+            # Native GM link routing bypasses the transition detector
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.nav_state = "My Team"
+                st.session_state.proxy_nav = "My Team"
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
@@ -365,7 +374,7 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.nav_state = "My Team"
+            st.session_state.proxy_nav = "My Team"
             st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
