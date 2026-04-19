@@ -180,7 +180,6 @@ def get_all_historical_points(pids):
                 'gp': len(v_logs)
             }
 
-        # Single source of truth for ALL stats
         data[pid] = {
             'all_time': calc_stats(lambda d: True),
             'today': calc_stats(lambda d: d == today_str),
@@ -235,7 +234,7 @@ try:
     pids = master_df['Player_Id'].dropna().unique()
     points_data = get_all_historical_points(pids)
     
-    # Fully map ALL points exclusively from the strict Game Log data (No summary API fallbacks)
+    # Map points directly from Game Logs
     master_df['Pts'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('pts', 0)).fillna(0).astype(int)
     master_df['G'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('g', 0)).fillna(0).astype(int)
     master_df['A'] = master_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('all_time', {}).get('a', 0)).fillna(0).astype(int)
@@ -251,10 +250,10 @@ try:
     gms = sorted(master_df['GM'].unique().tolist())
 
 except Exception as e:
-    st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
+    st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER (No Logout Link) ---
+# --- 6. UI HEADER ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -263,16 +262,14 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# Seamless Navigation Control (No redundant st.rerun)
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
-if nav:
-    st.session_state.nav_state = nav
-else:
-    nav = st.session_state.nav_state
+# --- BULLETPROOF NAVIGATION LOGIC ---
+selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
+if selected_nav:
+    st.session_state.nav_state = selected_nav
+nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
 if nav == "League":
-    # Aggregate data exactly from master_df
     lb = master_df.groupby('GM').agg({'GP':'sum','Pts':'sum','G':'sum','A':'sum','Pts_Yest':'sum'}).reset_index().sort_values(['Pts','G'], ascending=False)
     counts = master_df[~master_df['Team'].isin(ELIMINATED)].groupby('GM').size().reset_index(name='Rem')
     lb = pd.merge(lb, counts, on='GM', how='left').fillna(0)
@@ -319,8 +316,8 @@ elif nav == "My Team":
     with c3: st.metric("Total Pts", int(my_df['Pts'].sum()))
     with c4: st.metric("Points Today", int(my_df['Pts_Today'].sum()))
     with c5: st.metric("Points Yesterday", int(my_df['Pts_Yest'].sum()))
-    with c6: st.metric("Players Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
-    with c7: st.metric("Players Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
+    with c6: st.metric("Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
+    with c7: st.metric("Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
 
     st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
 
