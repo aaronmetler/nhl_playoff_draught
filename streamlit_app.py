@@ -14,12 +14,12 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-if 'nav_state' not in st.session_state: st.session_state.nav_state = 'League'
+if 'current_nav' not in st.session_state: st.session_state.current_nav = 'League'
 
 # Handle URL Navigation (from League Table buttons)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.nav_state = "My Team"
+        st.session_state.current_nav = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
@@ -64,7 +64,7 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links (Perfect Alignment) */
+        /* Invisible Buttons for GM Links */
         div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
         div.stButton > button {
             border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
@@ -73,8 +73,7 @@ st.markdown("""
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
 
         /* Anchor Links */
-        .anchor-links { text-align: center; margin-bottom: 15px; font-size: 14px; }
-        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 10px; font-weight: bold; }
+        .anchor-links a { color: #0068c9; text-decoration: none; margin: 0 5px; font-weight: bold; }
         .anchor-links a:hover { text-decoration: underline; }
         
         /* GM Header with Back to Top */
@@ -130,7 +129,7 @@ if not is_authenticated():
                 else: st.error("Invalid credentials.")
     st.stop()
 
-# --- 4. DATA FETCHING (Optimized) ---
+# --- 4. DATA FETCHING ---
 def fetch_single_roster(team):
     try:
         res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
@@ -242,7 +241,7 @@ except Exception as e:
     st.error(f"Critical Data Error: {e}")
     st.stop()
 
-# --- 6. UI HEADER (No Logout Link) ---
+# --- 6. UI HEADER ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -251,7 +250,9 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, key="nav_state", label_visibility="collapsed")
+# Navigation via generic session state to avoid key conflict errors
+nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.current_nav, label_visibility="collapsed")
+st.session_state.current_nav = nav
 
 # --- 7. VIEWS ---
 if nav == "League":
@@ -270,10 +271,10 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Native Button -> Perfectly aligned, No Login Loop
+            # Native Streamlit Button for direct state manipulation
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
-                st.session_state.nav_state = "My Team"
+                st.session_state.current_nav = "My Team"
                 st.rerun()
         b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
         b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
@@ -340,20 +341,28 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    # Hidden anchor to act as top of page target
+    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
+    
+    st.markdown(f"<div class='roast-container'>🏆 <b>{gms[0]}</b> and the rest of the league.</div>", unsafe_allow_html=True)
+    
     c1, c2, c3 = st.columns([1.5, 1.2, 3.3])
     with c1: 
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.nav_state = "My Team"
+            st.session_state.current_nav = "My Team"
             st.rerun()
     with c2: horizon = st.selectbox("Stats", ['All Time', 'Yesterday', 'Last 7 Days'], key="horiz2")
     
-    # Anchor Links below dropdown
-    anchor_html = "<div class='anchor-links'>" + " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms]) + "</div>"
-    st.markdown(anchor_html, unsafe_allow_html=True)
-
-    st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
+    # Legend & Anchors Side-by-Side
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}'>{g}</a>" for g in gms])
+    st.markdown(f"""
+        <div style='display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div class='anchor-links' style='margin-bottom: 0;'>{anchor_html}</div>
+        </div>
+    """, unsafe_allow_html=True)
     
     total_df = master_df.copy()
     if horizon != 'All Time':
@@ -364,7 +373,7 @@ elif nav == "All Rosters":
 
     # Render Each Team
     for g in gms:
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
