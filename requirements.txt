@@ -3,3 +3,4 @@ pandas
 requests
 plotly
 extra-streamlit-components
+google-generativeai
