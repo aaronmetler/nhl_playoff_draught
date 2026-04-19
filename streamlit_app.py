@@ -180,6 +180,7 @@ def get_all_historical_points(pids):
                 'gp': len(v_logs)
             }
 
+        # Single source of truth for ALL stats
         data[pid] = {
             'all_time': calc_stats(lambda d: True),
             'today': calc_stats(lambda d: d == today_str),
@@ -250,10 +251,10 @@ try:
     gms = sorted(master_df['GM'].unique().tolist())
 
 except Exception as e:
-    st.error("Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
+    st.error(f"Critical Data Sync Error: Make sure your CSV file is accurate and the NHL API is online.")
     st.stop()
 
-# --- 6. UI HEADER ---
+# --- 6. UI HEADER (No Logout Link) ---
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
@@ -262,10 +263,13 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 
 st.divider()
 
-# --- BULLETPROOF NAVIGATION LOGIC ---
-selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.nav_state, label_visibility="collapsed")
-if selected_nav:
-    st.session_state.nav_state = selected_nav
+# Direct State Binding - Prevents double click hanging
+st.segmented_control("Nav", ["League", "My Team", "All Rosters"], key="nav_state", label_visibility="collapsed")
+# Safeguard if user accidentally deselects the segmented control
+if st.session_state.nav_state is None:
+    st.session_state.nav_state = "League"
+    st.rerun()
+
 nav = st.session_state.nav_state
 
 # --- 7. VIEWS ---
@@ -304,11 +308,7 @@ elif nav == "My Team":
     st.markdown(f"<div class='roast-container'>🏒 Viewing <b>{st.session_state.sel_gm_val}</b>'s roster.</div>", unsafe_allow_html=True)
     
     c1, c2, c3, c4, c5, c6, c7 = st.columns([1.4, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
-    with c1: 
-        curr = st.selectbox("View another team", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
-        if curr != st.session_state.sel_gm_val:
-            st.session_state.sel_gm_val = curr
-            st.rerun()
+    with c1: st.selectbox("View another team", gms, key="sel_gm_val")
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz1")
     
     my_df = master_df[master_df['GM'] == st.session_state.sel_gm_val].copy()
@@ -358,14 +358,13 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
-    
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
         jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
             st.session_state.nav_state = "My Team"
+            st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
@@ -389,7 +388,8 @@ elif nav == "All Rosters":
         total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
     for g in gms:
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#top-of-page'>↑ Back to Top</a></div>", unsafe_allow_html=True)
+        # Changed back to top link to '#' to avoid appending persistent artifacts to URL
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g}</h3><a href='#'>↑ Back to Top</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
