@@ -18,12 +18,15 @@ if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 # Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'nav_override' not in st.session_state: st.session_state.nav_override = None
+if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
+if 'is_jump' not in st.session_state: st.session_state.is_jump = False
 
 # Handle Safe URL Navigation (Deep Linking)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
         st.session_state.nav_override = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
+        st.session_state.is_jump = True
     st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
@@ -269,16 +272,13 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
-# Apply any programmatic overrides (e.g., clicking a button) BEFORE the widget loads
 if st.session_state.nav_override:
     st.session_state.main_nav = st.session_state.nav_override
     st.session_state.nav_override = None
 
-# The widget handles user clicks natively
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
-    # If the user explicitly clicked the "My Team" tab, ensure it shows THEIR team
     if selected_nav == "My Team":
         st.session_state.sel_gm_val = st.session_state.display_name
     st.session_state.main_nav = selected_nav
@@ -303,7 +303,6 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # Clean trigger for programmatic navigation override
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
                 st.session_state.nav_override = "My Team"
@@ -377,7 +376,6 @@ elif nav == "My Team":
         r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
         if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = "(Select Team)"
@@ -385,7 +383,7 @@ elif nav == "All Rosters":
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
             st.session_state.nav_override = "My Team"
-            st.session_state.all_rost_jump = "(Select Team)" # Reset the dropdown
+            st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
             
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
@@ -400,26 +398,30 @@ elif nav == "All Rosters":
         total_df['A'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
         total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
-    # Calculate grouped totals and sort GM lists dynamically
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # NATIVE STREAMLIT MARKDOWN ANCHORS (Works flawlessly in SPAs)
-    anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
+    # Anchor Links matching the right alignment
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
     
-    st.markdown("➤ 🔥 indicates playing today | ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated", unsafe_allow_html=True)
-    st.markdown(f"**Jump to:** {anchor_md}")
-    st.divider()
-
+    st.markdown(f"""
+        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+                <div style='text-align: right;'>{anchor_html}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native Streamlit Anchor Target and "Back to top" link
         hc1, hc2 = st.columns([9, 1])
         with hc1:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
         with hc2:
-            st.markdown("<div style='text-align:right; margin-top:15px;'>[↑ Top](#metler-playoff-pool)</div>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align:right; margin-top:15px;'><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
             
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
