@@ -193,22 +193,20 @@ def get_teams_playing_today():
     except: pass
     return []
 
-# --- 4. AI ROAST LOGIC (FORCED REFRESH) ---
+# --- 4. AI ROAST LOGIC ---
 @st.cache_data(ttl=3600) 
 def generate_ai_roast(gm_name, pts, elim, t_type, roast_counter):
-    if not GEMINI_READY: return f"The playoffs are ruthless. {gm_name} has {pts} points."
+    if not GEMINI_READY: return f"Meanwhile, {gm_name} has {pts} points."
     try:
         days_67 = (datetime.datetime.now(PT_ZONE).date() - datetime.date(1967, 5, 2)).days
         model = genai.GenerativeModel('gemini-2.0-flash')
         if t_type == "leafs":
-            prompt = f"Write a one-sentence brutal roast about the Toronto Maple Leafs. Mention they have {pts} points in this pool and it has been {days_67} days since 1967. Use public sentiment."
+            prompt = f"Brutal 1-sentence sarcastic roast about Toronto Maple Leafs. Pool points: {pts}, {days_67} days since 1967. Channel fan sentiment."
         else:
-            prompt = f"Write a one-sentence sarcastic roast about fantasy hockey GM {gm_name} who has {pts} points and {elim} players eliminated. Be witty and use public hockey sentiment."
-        
+            prompt = f"1-sentence sarcastic hockey roast about fantasy GM {gm_name} with {pts} points and {elim} eliminated players. Channel public hockey sentiment."
         response = model.generate_content(prompt)
         return response.text.strip()
-    except Exception:
-        return f"Meanwhile, {gm_name} is hanging on with {pts} points."
+    except Exception: return f"Meanwhile, {gm_name} is hanging on with {pts} points."
 
 # --- 5. UI HELPERS ---
 def get_avatar_uri(gm_check_name):
@@ -242,6 +240,8 @@ with t_menu:
     with st.popover("⚙️"):
         new_disp = st.text_input("Display Name", value=st.session_state.display_name)
         if st.button("Update"): st.session_state.display_name = new_disp; st.rerun()
+        file = st.file_uploader("Upload Avatar", type=["jpg", "png", "jpeg"])
+        if st.button("Save Avatar") and file: st.session_state.avatar = file.getvalue(); st.rerun()
         if st.button("Log Out"): cookie_manager.delete('user_email_cookie'); st.session_state.authenticated = False; st.rerun()
 
 st.divider()
@@ -280,11 +280,9 @@ master_df = pd.DataFrame(master_list)
 master_df['Rank by Round'] = master_df.groupby('Round')['Points'].rank(method='min', ascending=False).astype(int)
 master_df['Top Pick/Rnd'] = master_df['Rank by Round'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else str(x))
 
+display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
 if st.session_state.display_name:
     master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
-    display_gms = sorted([st.session_state.display_name if g == st.session_state.gm_name else g for g in gms_cols])
-else:
-    display_gms = sorted(gms_cols)
 
 # --- 8. UI VIEWS ---
 if nav == "League":
@@ -295,14 +293,13 @@ if nav == "League":
     lb['Pts Back'] = lb['Points'].max() - lb['Points']
     
     worst = lb.iloc[-1]; leafs_pts = master_df[master_df['Team_Raw'] == 'TOR']['Points'].sum()
-    
-    # Generate Roasts
     q1 = generate_ai_roast("Toronto", leafs_pts, 0, "leafs", st.session_state.roast_counter)
     q2 = generate_ai_roast(worst['GM'], worst['Points'], 10 - int(worst['Rem']), "normal", st.session_state.roast_counter)
     
     col_roast, col_btn = st.columns([0.85, 0.15])
     with col_roast: st.markdown(f"<div class='roast-container'><div class='quote-1'><b>{q1}</b></div><div class='quote-2'><b>{q2}</b></div></div>", unsafe_allow_html=True)
     with col_btn:
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 New Roasts", use_container_width=True):
             st.session_state.roast_counter += 1
             st.rerun()
@@ -314,30 +311,50 @@ if nav == "League":
     st.markdown(lb_html + "</table>", unsafe_allow_html=True)
 
 elif nav == "My Team":
-    sel_gm = st.selectbox("View Team", display_gms, index=display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0)
-    my_df = master_df[master_df['GM'] == sel_gm]
-    q = generate_ai_roast(sel_gm, my_df['Points'].sum(), len(my_df[my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]), "normal", st.session_state.roast_counter)
+    # 1. Full-width Roast Banner at the top
+    selected_gm_temp = st.session_state.get('sel_gm_val', display_gms[0])
+    my_preview = master_df[master_df['GM'] == selected_gm_temp]
+    elim_count = len(my_preview[my_preview['Team_Raw'].isin(ELIMINATED_TEAMS)])
+    
+    q = generate_ai_roast(selected_gm_temp, my_preview['Points'].sum(), elim_count, "normal", st.session_state.roast_counter)
     
     col_roast, col_btn = st.columns([0.85, 0.15])
     with col_roast: st.markdown(f"<div class='roast-container' style='animation:none;'><b style='color:#0068c9;'>{q}</b></div>", unsafe_allow_html=True)
     with col_btn:
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
         if st.button("🔄 New Roast", use_container_width=True):
             st.session_state.roast_counter += 1
             st.rerun()
 
+    # 2. Controls and KPIs row
     c1, c2, c3, c4, c5 = st.columns([2.2, 2.0, 1.2, 1.4, 1.4])
-    with c2: time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}; stat_filter = st.selectbox("Stats", list(time_options.keys()))
+    with c1:
+        sel_gm = st.selectbox("View Team", display_gms, index=display_gms.index(st.session_state.display_name) if st.session_state.display_name in display_gms else 0, key="sel_gm_val")
+    with c2: 
+        time_options = {'All Time': 0, 'Yesterday': 1, 'Last 48 Hours': 2, 'Last 7 Days': 7, 'Last 14 Days': 14, 'Last 30 Days': 30}
+        stat_filter = st.selectbox("Stats", list(time_options.keys()))
     
+    my_df = master_df[master_df['GM'] == sel_gm]
     pids = my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY)]['Player_Id'].dropna()
     p_today = sum(get_historical_points(pids, 0).values()) if not pids.empty else 0
+    
     with c3: st.metric("Points Today", p_today)
     with c4: st.metric("Players Active Today", len(my_df[my_df['Team_Raw'].isin(TEAMS_PLAYING_TODAY) & ~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
     with c5: st.metric("Players Remaining", len(my_df[~my_df['Team_Raw'].isin(ELIMINATED_TEAMS)]))
 
     st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
+    
+    # Process historical filter if active
+    if time_options[stat_filter] > 0:
+        hist_data = get_historical_points(my_df['Player_Id'].dropna(), time_options[stat_filter])
+        my_df = my_df.copy()
+        my_df['Points'] = my_df['Player_Id'].map(hist_data).fillna(0).astype(int)
+        my_df['G'] = "-"; my_df['A'] = "-"; my_df['GP'] = "-"; my_df['Top Pick/Rnd'] = "-"
+
     st.markdown(generate_team_table_html(my_df), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<p style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
     for g in display_gms:
-        st.markdown(f"<h3 style='color:#0068c9; margin-top:20px;'>{g}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:#0068c9;'>{g}</h3>", unsafe_allow_html=True)
         st.markdown(generate_team_table_html(master_df[master_df['GM'] == g]), unsafe_allow_html=True)
