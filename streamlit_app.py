@@ -10,19 +10,19 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION & ROUTING INITIALIZATION ---
-if 'authenticated' not in st.session_state: st.session_state.authenticated = False
-if 'gm_name' not in st.session_state: st.session_state.gm_name = None
-if 'display_name' not in st.session_state: st.session_state.display_name = None
+if 'display_name' not in st.session_state: st.session_state.display_name = "Guest"
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-
-# Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
-if 'nav_override' not in st.session_state: st.session_state.nav_override = None
-if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
-if 'is_jump' not in st.session_state: st.session_state.is_jump = False
+
+# Handle Safe URL Navigation (Deep Linking) BEFORE anything else
+if "nav" in st.query_params:
+    if st.query_params["nav"] == "team":
+        st.session_state.main_nav = "My Team"
+        st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
+    st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
-st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
+st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -58,7 +58,8 @@ st.markdown("""
             height: 40px; font-size: 14px; text-align: center; border-bottom: 1px solid #f9f9f9;
         }
         .table-row:hover { background-color: #f1f8ff; }
-        .cell-left { text-align: left; justify-content: flex-start; }
+        .cell-left { text-align: left !important; justify-content: flex-start !important; }
+        .header-left { text-align: left !important; }
         
         /* League View Columns */
         .l-rank { width: 8%; }
@@ -90,17 +91,10 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links */
-        div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
-        div.stButton > button {
-            border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
-            text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
-        }
-        div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
-        
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            .hide-mobile { display: none !important; }
+            /* This class safely hides all non-essential columns on vertical phones */
+            .hide-portrait { display: none !important; width: 0 !important; overflow: hidden !important; }
             
             /* Resize Remaining League Columns */
             .l-rank { width: 15%; }
@@ -113,8 +107,9 @@ st.markdown("""
             .r-pts { width: 25%; }
             .r-yest { width: 25%; }
             
-            /* Shrink Text */
-            .table-row, .table-header { font-size: 12px; }
+            /* Shrink Text to Fit Vertically */
+            .table-row, .table-header { font-size: 11px; }
+            .table-row > div, .table-header > div { white-space: normal; line-height: 1.2; padding: 0 2px; }
             .news-link { display: none !important; }
             
             /* Shrink KPIs */
@@ -124,41 +119,32 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Add invisible anchor point at the very top of the page
+st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
+
 cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. PASSWORDLESS AUTHENTICATION ---
+# --- 3. SIDEBAR IDENTITY (No Blocking) ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-def is_authenticated():
-    if st.session_state.authenticated: return True
-    auth_cookie = cookie_manager.get('user_identity_cookie')
-    if auth_cookie in GM_ROSTER:
-        st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, auth_cookie, auth_cookie
-        return True
-    return False
+# Check cookie silently
+auth_cookie = cookie_manager.get('user_identity_cookie')
+if auth_cookie in GM_ROSTER and st.session_state.display_name == "Guest":
+    st.session_state.display_name = auth_cookie
 
-if not is_authenticated():
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.title("🏒 Metler Playoff Pool")
-        with st.form("login"):
-            st.markdown("### Welcome! Who are you?")
-            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-            if st.form_submit_button("Enter Pool"):
-                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, selected_gm, selected_gm
-                st.rerun()
-    st.stop() # Prevents any execution until the cookie resolves and the user is confirmed
-
-# --- SAFE URL NAVIGATION (Moved AFTER authentication so it doesn't wipe on first load) ---
-if "nav" in st.query_params:
-    if st.query_params["nav"] == "team":
-        st.session_state.nav_override = "My Team"
-        st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
-        st.session_state.is_jump = True
-    st.query_params.clear()
+with st.sidebar:
+    st.markdown("### 👤 User Profile")
+    st.markdown("Select your name to default your team view.")
+    
+    current_idx = GM_ROSTER.index(st.session_state.display_name) if st.session_state.display_name in GM_ROSTER else 0
+    selected_gm = st.selectbox("I am:", ["Guest"] + sorted(GM_ROSTER), index=0 if st.session_state.display_name == "Guest" else sorted(GM_ROSTER).index(st.session_state.display_name) + 1)
+    
+    if selected_gm != "Guest" and selected_gm != st.session_state.display_name:
+        cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+        st.session_state.display_name = selected_gm
+        st.rerun()
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -295,8 +281,6 @@ try:
     master_df['Rank_Rnd'] = master_df.groupby('Round')['Pts'].rank(method='min', ascending=False).astype(int)
     master_df['Top_Pick'] = master_df['Rank_Rnd'].apply(lambda x: "🥇 1" if x==1 else "🥈 2" if x==2 else "🥉 3" if x==3 else "-")
     
-    if st.session_state.display_name:
-        master_df['GM'] = master_df['GM'].replace(st.session_state.gm_name, st.session_state.display_name)
     gms = sorted(master_df['GM'].unique().tolist())
 
 except Exception as e:
@@ -307,21 +291,22 @@ except Exception as e:
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
-with t_title: st.markdown("<h1 style='margin-top: -10px; font-size: 2.6rem;' id='metler-playoff-pool'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+with t_title: st.markdown("<h1 style='margin-top: -10px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
 with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
-if st.session_state.nav_override:
-    st.session_state.main_nav = st.session_state.nav_override
-    st.session_state.nav_override = None
-
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
     if selected_nav == "My Team":
-        st.session_state.sel_gm_val = st.session_state.display_name
+        # Default to the logged-in user if they click "My Team" naturally
+        if st.session_state.display_name != "Guest" and st.session_state.display_name in gms:
+            st.session_state.sel_gm_val = st.session_state.display_name
+        else:
+            st.session_state.sel_gm_val = gms[0]
+            
     st.session_state.main_nav = selected_nav
     st.rerun()
 
@@ -340,13 +325,13 @@ if nav == "League":
         <div class='table-header'>
             <div class='l-rank'>Rank</div>
             <div class='l-name header-left'>Name</div>
-            <div class='l-gp hide-mobile'>GP</div>
+            <div class='l-gp hide-portrait'>GP</div>
             <div class='l-pts'>Points</div>
-            <div class='l-g hide-mobile'>G</div>
-            <div class='l-a hide-mobile'>A</div>
+            <div class='l-g hide-portrait'>G</div>
+            <div class='l-a hide-portrait'>A</div>
             <div class='l-yest'>Pts Yest</div>
-            <div class='l-back hide-mobile'>Pts Back</div>
-            <div class='l-rem hide-mobile'>Remaining</div>
+            <div class='l-back hide-portrait'>Pts Back</div>
+            <div class='l-rem hide-portrait'>Remaining</div>
         </div>
     """, unsafe_allow_html=True)
     
@@ -357,13 +342,13 @@ if nav == "League":
         <div class='table-row'>
             <div class='l-rank'><b>{r['Rank']}</b></div>
             <div class='l-name cell-left'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
-            <div class='l-gp hide-mobile'>{r['GP']}</div>
+            <div class='l-gp hide-portrait'>{r['GP']}</div>
             <div class='l-pts'><b>{int(r['Pts'])}</b></div>
-            <div class='l-g hide-mobile'>{r['G']}</div>
-            <div class='l-a hide-mobile'>{r['A']}</div>
+            <div class='l-g hide-portrait'>{r['G']}</div>
+            <div class='l-a hide-portrait'>{r['A']}</div>
             <div class='l-yest'>{int(r['Pts_Yest'])}</div>
-            <div class='l-back hide-mobile'>{r['Back']}</div>
-            <div class='l-rem hide-mobile'>{int(r['Rem'])}</div>
+            <div class='l-back hide-portrait'>{r['Back']}</div>
+            <div class='l-rem hide-portrait'>{int(r['Rem'])}</div>
         </div>
         """
         html_rows.append(row_html)
@@ -393,9 +378,9 @@ elif nav == "My Team":
 
     st.markdown("""
         <div style='font-size: 0.85rem; color: #888; margin-bottom: 15px;'>
-            <div>➤ 🔥 indicates playing today</div>
-            <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-            <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
+            ➤ 🔥 indicates playing today<br>
+            ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
+            ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
         </div>
     """, unsafe_allow_html=True)
 
@@ -413,15 +398,15 @@ elif nav == "My Team":
     st.markdown("""
         <div class='table-header'>
             <div class='r-name header-left'>Player</div>
-            <div class='r-team hide-mobile'>Team</div>
-            <div class='r-pos hide-mobile'>Pos</div>
-            <div class='r-gp hide-mobile'>GP</div>
+            <div class='r-team hide-portrait'>Team</div>
+            <div class='r-pos hide-portrait'>Pos</div>
+            <div class='r-gp hide-portrait'>GP</div>
             <div class='r-pts'>Points</div>
             <div class='r-yest'>Pts Yest</div>
-            <div class='r-g hide-mobile'>G</div>
-            <div class='r-a hide-mobile'>A</div>
-            <div class='r-rnd hide-mobile'>Round Picked</div>
-            <div class='r-top hide-mobile'>Top Pick/Rnd</div>
+            <div class='r-g hide-portrait'>G</div>
+            <div class='r-a hide-portrait'>A</div>
+            <div class='r-rnd hide-portrait'>Round Picked</div>
+            <div class='r-top hide-portrait'>Top Pick/Rnd</div>
         </div>
     """, unsafe_allow_html=True)
     
@@ -441,15 +426,15 @@ elif nav == "My Team":
         row_html = f"""
         <div class='table-row'>
             <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
-            <div class='r-team hide-mobile'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
-            <div class='r-pos hide-mobile {t_cls}'>{r['Pos']}</div>
-            <div class='r-gp hide-mobile {t_cls}'>{r['GP']}</div>
+            <div class='r-team hide-portrait'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+            <div class='r-pos hide-portrait {t_cls}'>{r['Pos']}</div>
+            <div class='r-gp hide-portrait {t_cls}'>{r['GP']}</div>
             <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
             <div class='r-yest {t_cls}'>{r['Pts_Yest']}</div>
-            <div class='r-g hide-mobile {t_cls}'>{r['G']}</div>
-            <div class='r-a hide-mobile {t_cls}'>{r['A']}</div>
-            <div class='r-rnd hide-mobile {t_cls}'>{r['Round']}</div>
-            <div class='r-top hide-mobile {t_cls}'>{r['Top_Pick']}</div>
+            <div class='r-g hide-portrait {t_cls}'>{r['G']}</div>
+            <div class='r-a hide-portrait {t_cls}'>{r['A']}</div>
+            <div class='r-rnd hide-portrait {t_cls}'>{r['Round']}</div>
+            <div class='r-top hide-portrait {t_cls}'>{r['Top_Pick']}</div>
         </div>
         """
         html_rows.append(row_html)
@@ -473,46 +458,42 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Native Streamlit Markdown Links for Anchors
-    c_leg, c_jump = st.columns([2, 1.5])
+    c_leg, c_jump = st.columns([1.5, 2])
     with c_leg:
-        st.markdown("""
-            <div style='font-size: 0.85rem; color: #888;'>
-                <div>➤ 🔥 indicates playing today</div>
-                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-                <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
-            </div>
-        """, unsafe_allow_html=True)
+        # Instruction Legend formatted correctly
+        st.markdown("➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round", unsafe_allow_html=True)
     with c_jump:
+        # PURE NATIVE MARKDOWN (No HTML wrapper to break the links)
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"<div style='text-align:right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
+        st.markdown(f"**Jump to:** {anchor_md}")
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native Streamlit Subheader for perfectly bound Anchors
-        hc1, hc2 = st.columns([8, 2])
-        with hc1:
+        c_head, c_top = st.columns([8, 2])
+        with c_head:
+            # Native Streamlit Subheader Anchor
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            st.markdown("<div style='margin-top: 15px; text-align:right;'>**[↑ Back to Top](#metler-playoff-pool)**</div>", unsafe_allow_html=True)
+        with c_top:
+            # PURE NATIVE MARKDOWN Back to top link
+            st.markdown("\n\n**[↑ Back to Top](#top-of-page)**")
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
         st.markdown("""
             <div class='table-header'>
                 <div class='r-name header-left'>Player</div>
-                <div class='r-team hide-mobile'>Team</div>
-                <div class='r-pos hide-mobile'>Pos</div>
-                <div class='r-gp hide-mobile'>GP</div>
+                <div class='r-team hide-portrait'>Team</div>
+                <div class='r-pos hide-portrait'>Pos</div>
+                <div class='r-gp hide-portrait'>GP</div>
                 <div class='r-pts'>Points</div>
                 <div class='r-yest'>Pts Yest</div>
-                <div class='r-g hide-mobile'>G</div>
-                <div class='r-a hide-mobile'>A</div>
-                <div class='r-rnd hide-mobile'>Round Picked</div>
-                <div class='r-top hide-mobile'>Top Pick/Rnd</div>
+                <div class='r-g hide-portrait'>G</div>
+                <div class='r-a hide-portrait'>A</div>
+                <div class='r-rnd hide-portrait'>Round Picked</div>
+                <div class='r-top hide-portrait'>Top Pick/Rnd</div>
             </div>
         """, unsafe_allow_html=True)
         
@@ -534,15 +515,15 @@ elif nav == "All Rosters":
             row_html = f"""
             <div class='table-row'>
                 <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
-                <div class='r-team hide-mobile'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
-                <div class='r-pos hide-mobile {t_cls}'>{r['Pos']}</div>
-                <div class='r-gp hide-mobile {t_cls}'>{r['GP']}</div>
+                <div class='r-team hide-portrait'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+                <div class='r-pos hide-portrait {t_cls}'>{r['Pos']}</div>
+                <div class='r-gp hide-portrait {t_cls}'>{r['GP']}</div>
                 <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
                 <div class='r-yest {t_cls}'>{r['Pts_Yest']}</div>
-                <div class='r-g hide-mobile {t_cls}'>{r['G']}</div>
-                <div class='r-a hide-mobile {t_cls}'>{r['A']}</div>
-                <div class='r-rnd hide-mobile {t_cls}'>{r['Round']}</div>
-                <div class='r-top hide-mobile {t_cls}'>{r['Top_Pick']}</div>
+                <div class='r-g hide-portrait {t_cls}'>{r['G']}</div>
+                <div class='r-a hide-portrait {t_cls}'>{r['A']}</div>
+                <div class='r-rnd hide-portrait {t_cls}'>{r['Round']}</div>
+                <div class='r-top hide-portrait {t_cls}'>{r['Top_Pick']}</div>
             </div>
             """
             html_rows.append(row_html)
