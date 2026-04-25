@@ -9,20 +9,13 @@ import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. SESSION & ROUTING INITIALIZATION ---
+# --- 1. SESSION INITIALIZATION ---
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'is_jump' not in st.session_state: st.session_state.is_jump = False
-if 'pending_nav' not in st.session_state: st.session_state.pending_nav = None
-
-# "Memory Catcher": Grabs URL intent BEFORE the login screen can wipe it
-if "nav" in st.query_params:
-    if st.query_params["nav"] == "team":
-        st.session_state.pending_nav = "My Team"
-        st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
-    st.query_params.clear()
+if 'nav_override' not in st.session_state: st.session_state.nav_override = None
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -87,10 +80,9 @@ st.markdown("""
         .r-rnd { width: 8%; }
         .r-top { width: 8%; }
         
-        /* Links and Aesthetics */
+        /* Links */
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
-        .plain-text { color: inherit; }
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
@@ -121,14 +113,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Add invisible anchor point at the very top of the page
+# Invisible anchor at the very top of the page
 st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. MAIN PAGE PASSWORDLESS AUTHENTICATION ---
+# --- 3. PASSWORDLESS AUTHENTICATION ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
@@ -150,14 +142,15 @@ if not is_authenticated():
                 cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
                 st.session_state.authenticated, st.session_state.display_name = True, selected_gm
                 st.rerun()
-    st.stop() # Blocks the rest of the app until they select a name
+    st.stop() # Execution halts here UNTIL authentication is completely verified
 
-# Process the deep link now that we are safely logged in
-if st.session_state.pending_nav:
-    st.session_state.main_nav = st.session_state.pending_nav
-    st.session_state.sel_gm_val = st.session_state.pending_gm
-    st.session_state.is_jump = True
-    st.session_state.pending_nav = None
+# --- SAFE URL NAVIGATION (Processed strictly AFTER authentication to prevent wipe loops) ---
+if "nav" in st.query_params:
+    if st.query_params["nav"] == "team":
+        st.session_state.nav_override = "My Team"
+        st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
+        st.session_state.is_jump = True
+    st.query_params.clear()
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -310,6 +303,10 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
+if st.session_state.nav_override:
+    st.session_state.main_nav = st.session_state.nav_override
+    st.session_state.nav_override = None
+
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
@@ -334,30 +331,39 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    # NATIVE STREAMLIT COLUMNS for the League Table (Zero browser reloads)
-    h_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-    h_labels = ["Rank", "Name", "GP", "Points", "G", "A", "Pts Yest", "Pts Back", "Remaining"]
-    for i, l in enumerate(h_labels):
-        css_hide = "hide-portrait" if i not in [0, 1, 3, 6] else ""
-        h_cols[i].markdown(f"<div class='header-text {'header-left' if i==1 else ''} {css_hide}'>{l}</div>", unsafe_allow_html=True)
+    st.markdown("""
+        <div class='table-header'>
+            <div class='l-rank'>Rank</div>
+            <div class='l-name header-left'>Name</div>
+            <div class='l-gp hide-portrait'>GP</div>
+            <div class='l-pts'>Points</div>
+            <div class='l-g hide-portrait'>G</div>
+            <div class='l-a hide-portrait'>A</div>
+            <div class='l-yest'>Pts Yest</div>
+            <div class='l-back hide-portrait'>Pts Back</div>
+            <div class='l-rem hide-portrait'>Remaining</div>
+        </div>
+    """, unsafe_allow_html=True)
     
+    html_rows = []
     for _, r in lb.iterrows():
-        b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-        b_cols[0].markdown(f"<div class='cell-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
-        with b_cols[1]:
-            # Web-socket native button! Eliminates the GET request redirect bug entirely.
-            if st.button(r['GM'], key=f"nav_{r['GM']}"):
-                st.session_state.sel_gm_val = r['GM']
-                st.session_state.main_nav = "My Team"
-                st.session_state.is_jump = True
-                st.rerun()
-        b_cols[2].markdown(f"<div class='cell-text hide-portrait'>{r['GP']}</div>", unsafe_allow_html=True)
-        b_cols[3].markdown(f"<div class='cell-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
-        b_cols[4].markdown(f"<div class='cell-text hide-portrait'>{r['G']}</div>", unsafe_allow_html=True)
-        b_cols[5].markdown(f"<div class='cell-text hide-portrait'>{r['A']}</div>", unsafe_allow_html=True)
-        b_cols[6].markdown(f"<div class='cell-text'>{int(r['Pts_Yest'])}</div>", unsafe_allow_html=True)
-        b_cols[7].markdown(f"<div class='cell-text hide-portrait'>{r['Back']}</div>", unsafe_allow_html=True)
-        b_cols[8].markdown(f"<div class='cell-text hide-portrait'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
+        # Pure HTML <a> Tag for natural hyperlink aesthetic and behavior
+        gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
+        row_html = f"""
+        <div class='table-row'>
+            <div class='l-rank'><b>{r['Rank']}</b></div>
+            <div class='l-name cell-left'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
+            <div class='l-gp hide-portrait'>{r['GP']}</div>
+            <div class='l-pts'><b>{int(r['Pts'])}</b></div>
+            <div class='l-g hide-portrait'>{r['G']}</div>
+            <div class='l-a hide-portrait'>{r['A']}</div>
+            <div class='l-yest'>{int(r['Pts_Yest'])}</div>
+            <div class='l-back hide-portrait'>{r['Back']}</div>
+            <div class='l-rem hide-portrait'>{int(r['Rem'])}</div>
+        </div>
+        """
+        html_rows.append(row_html)
+    st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "My Team":
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
@@ -473,21 +479,23 @@ elif nav == "All Rosters":
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
-        # Pure HTML Anchors restored (Fixed the broken Markdown issue)
-        anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold;'>{g}</a>" for g in sorted_gms])
-        st.markdown(f"<div style='text-align:right; margin-top: 5px;'><b>Jump to:</b> {anchor_html}</div>", unsafe_allow_html=True)
+        # PURE NATIVE MARKDOWN (No HTML wrapper to break the links)
+        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
+        st.markdown(f"**Jump to:** {anchor_md}")
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        hc1, hc2 = st.columns([8, 2])
-        with hc1:
+        c_head, c_top = st.columns([8, 2])
+        with c_head:
+            # Native Streamlit Subheader Anchor
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            # Pure HTML Back to Top Link restored
-            st.markdown("<div style='margin-top: 15px; text-align:right;'><a href='#top-of-page' style='color:#0068c9; text-decoration:none; font-weight:bold;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
+        with c_top:
+            # PURE NATIVE MARKDOWN Back to top link (Isolated to prevent HTML overwrites)
+            st.write("")
+            st.markdown("**[↑ Back to Top](#top-of-page)**")
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
