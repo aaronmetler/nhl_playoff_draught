@@ -481,7 +481,7 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Native Streamlit Markdown Links for Anchors
+    # Pure Native Streamlit Markdown (No HTML Wrapper)
     c_leg, c_jump = st.columns([2, 1.5])
     with c_leg:
         st.markdown("""
@@ -493,19 +493,20 @@ elif nav == "All Rosters":
         """, unsafe_allow_html=True)
     with c_jump:
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"<div style='text-align:right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
+        st.markdown(f"**Jump to:** {anchor_md}")
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native Streamlit Subheader for perfectly bound Anchors
         hc1, hc2 = st.columns([8, 2])
         with hc1:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
         with hc2:
-            st.markdown("<div style='margin-top: 15px; text-align:right;'>**[↑ Back to Top](#metler-playoff-pool)**</div>", unsafe_allow_html=True)
+            # HTML Break isolated from the Markdown Link
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("**[↑ Back to Top](#metler-playoff-pool)**")
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
