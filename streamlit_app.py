@@ -96,7 +96,7 @@ st.markdown("""
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            /* For the 10-column layout (Player rows) - Hide everything except Name, Pts, Pts Yest */
+            /* 10-column layout (Player rows) - Hide everything except Name, Pts, Pts Yest */
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(2),
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(3),
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(4),
@@ -111,7 +111,7 @@ st.markdown("""
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(5) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(6) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
 
-            /* For the 9-column layout (League rows) - Hide clutter, keep Rank, Name, Points, Pts Yesterday */
+            /* 9-column layout (League rows) - Hide clutter, keep Rank, Name, Points, Pts Yesterday */
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(3),
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(5),
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(6),
@@ -149,11 +149,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
+ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 3. PASSWORDLESS AUTHENTICATION ---
-# Simplified GM tracking
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
@@ -172,7 +171,6 @@ if not is_authenticated():
             st.markdown("### Welcome! Who are you?")
             selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
             if st.form_submit_button("Enter Pool"):
-                # 10-year cookie persistence. They never login again.
                 cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
                 st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, selected_gm, selected_gm
                 st.rerun()
@@ -387,24 +385,29 @@ elif nav == "My Team":
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
-    # Updated 10-column table to include Pts Yest for Mobile Portrait mode
     t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
     t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
     for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
     
     for _, r in my_df.iterrows():
         r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-        is_elim = r['Team'] in ELIMINATED
+        
+        safe_team = str(r['Team']).strip()
+        is_elim = safe_team in ELIMINATED
         t_cls = "eliminated" if is_elim else "plain-text"
         l_cls = "eliminated" if is_elim else "player-link"
-        fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
+        fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
         
-        p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
+        try:
+            p_url = f"https://www.nhl.com/player/{int(float(r['Player_Id']))}"
+        except:
+            p_url = "#"
+            
         n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-        t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
+        t_url = f"https://www.nhl.com/{TEAM_URLS.get(safe_team, safe_team.lower())}/"
         
         r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-        r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
+        r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
         r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
         r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
         r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
@@ -441,7 +444,6 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Pure HTML Anchor links
     anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
     
     st.markdown(f"""
@@ -457,29 +459,33 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Pure HTML Back to Top link
         st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
-        # Updated 10-column table to include Pts Yest for Mobile Portrait mode
         t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
         t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
         for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
         
         for _, r in g_df.iterrows():
             r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-            is_elim = r['Team'] in ELIMINATED
+            
+            safe_team = str(r['Team']).strip()
+            is_elim = safe_team in ELIMINATED
             t_cls = "eliminated" if is_elim else "plain-text"
             l_cls = "eliminated" if is_elim else "player-link"
-            fire = " 🔥" if r['Team'] in PLAYING_TODAY and not is_elim else ""
+            fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
             
-            p_url = f"https://www.nhl.com/player/{int(r['Player_Id'])}" if r['Player_Id'] else "#"
+            try:
+                p_url = f"https://www.nhl.com/player/{int(float(r['Player_Id']))}"
+            except:
+                p_url = "#"
+                
             n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-            t_url = f"https://www.nhl.com/{TEAM_URLS.get(r['Team'], r['Team'].lower())}/"
+            t_url = f"https://www.nhl.com/{TEAM_URLS.get(safe_team, safe_team.lower())}/"
             
             r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-            r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{r['Team']}</a></div>", unsafe_allow_html=True)
+            r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
             r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
             r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
             r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
