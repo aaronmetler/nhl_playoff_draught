@@ -177,6 +177,29 @@ if not is_authenticated():
     st.stop()
 
 # --- 4. STRICT API FETCHING ---
+TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
+
+# Failsafe URL Generators to prevent NameErrors & AttributeErrors on missing data
+def get_team_url(team_val):
+    try:
+        t = str(team_val).strip()
+        if pd.isna(team_val) or not t or t.lower() == 'nan': return "#"
+        return f"https://www.nhl.com/{TEAM_URLS.get(t, t.lower())}/"
+    except: return "#"
+
+def get_player_url(pid_val):
+    try:
+        if pd.isna(pid_val): return "#"
+        return f"https://www.nhl.com/player/{int(float(pid_val))}"
+    except: return "#"
+
+def get_news_url(name_val):
+    try:
+        n = str(name_val).strip()
+        if pd.isna(name_val) or not n or n.lower() == 'nan': return "#"
+        return f"https://news.google.com/search?q={urllib.parse.quote(n)}+NHL"
+    except: return "#"
+
 def fetch_single_roster(team):
     res = requests.get(f"https://api-web.nhle.com/v1/roster/{team}/current", headers=HEADERS, timeout=5)
     res.raise_for_status() 
@@ -392,21 +415,18 @@ elif nav == "My Team":
     for _, r in my_df.iterrows():
         r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
         
-        safe_team = str(r['Team']).strip()
+        safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
         is_elim = safe_team in ELIMINATED
         t_cls = "eliminated" if is_elim else "plain-text"
         l_cls = "eliminated" if is_elim else "player-link"
         fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
         
-        try:
-            p_url = f"https://www.nhl.com/player/{int(float(r['Player_Id']))}"
-        except:
-            p_url = "#"
-            
-        n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-        t_url = f"https://www.nhl.com/{TEAM_URLS.get(safe_team, safe_team.lower())}/"
+        p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
+        p_url = get_player_url(r['Player_Id'])
+        n_url = get_news_url(r['Player_Name'])
+        t_url = get_team_url(r['Team'])
         
-        r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
+        r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
         r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
         r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
         r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
@@ -418,6 +438,7 @@ elif nav == "My Team":
         r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
@@ -444,14 +465,15 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
+    # Pure HTML Anchors so they don't break inside the HTML wrapper
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold;'>{g}</a>" for g in sorted_gms])
     
     st.markdown(f"""
         <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
             <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
             <div style='display: flex; justify-content: space-between; align-items: center;'>
                 <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-                <div style='text-align: right;'>{anchor_html}</div>
+                <div style='text-align: right;'><b>Jump to:</b> {anchor_html}</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -459,6 +481,7 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
+        # Pure HTML Back to Top Link
         st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
@@ -470,21 +493,18 @@ elif nav == "All Rosters":
         for _, r in g_df.iterrows():
             r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
             
-            safe_team = str(r['Team']).strip()
+            safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
             is_elim = safe_team in ELIMINATED
             t_cls = "eliminated" if is_elim else "plain-text"
             l_cls = "eliminated" if is_elim else "player-link"
             fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
             
-            try:
-                p_url = f"https://www.nhl.com/player/{int(float(r['Player_Id']))}"
-            except:
-                p_url = "#"
-                
-            n_url = f"https://news.google.com/search?q={str(r['Player_Name']).replace(' ','+')}+NHL"
-            t_url = f"https://www.nhl.com/{TEAM_URLS.get(safe_team, safe_team.lower())}/"
+            p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
+            p_url = get_player_url(r['Player_Id'])
+            n_url = get_news_url(r['Player_Name'])
+            t_url = get_team_url(r['Team'])
             
-            r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{r['Player_Name']}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
+            r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
             r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
             r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
             r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
