@@ -95,36 +95,55 @@ st.markdown("""
         .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
-        @media (max-width: 768px) {
-            /* 1. Target the Data Tables (Rows with 9 columns). Force min-width to prevent vertical squishing. */
+        @media (max-width: 768px) and (orientation: portrait) {
+            /* For the 10-column layout (Player rows) - Hide everything except Name, Pts, Pts Yest */
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(2),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(3),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(4),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(7),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(8),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(9),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(10) {
+                display: none !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) { min-width: 100% !important; overflow: hidden !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(1) { width: 50% !important; min-width: 50% !important; max-width: 50% !important; flex: 1 1 50% !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(5) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(6) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
+
+            /* For the 9-column layout (League rows) - Hide clutter, keep Rank, Name, Points, Pts Yesterday */
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(3),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(5),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(6),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(8),
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(9) {
+                display: none !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) { min-width: 100% !important; overflow: hidden !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(1) { width: 15% !important; min-width: 15% !important; max-width: 15% !important; flex: 1 1 15% !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(2) { width: 45% !important; min-width: 45% !important; max-width: 45% !important; flex: 1 1 45% !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(4) { width: 20% !important; min-width: 20% !important; max-width: 20% !important; flex: 1 1 20% !important; }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(7) { width: 20% !important; min-width: 20% !important; max-width: 20% !important; flex: 1 1 20% !important; }
+
+            /* Downscale fonts to fit */
+            .cell-text, .header-text, div.stButton > button, .anchor-links a {
+                font-size: 11px !important;
+                white-space: normal !important;
+                line-height: 1.2 !important;
+            }
+            .news-link { display: none !important; }
+            div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
+            div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
+        }
+        
+        /* --- MOBILE LANDSCAPE OPTIMIZATION --- */
+        @media (max-width: 768px) and (orientation: landscape) {
             [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)) {
                 flex-direction: row !important;
                 flex-wrap: nowrap !important;
-                min-width: 650px !important; 
+                min-width: 700px !important; 
             }
-            
-            /* 2. Target Non-Table items (KPIs, Dropdowns). Let them stack/wrap natively to fit screen. */
-            [data-testid="stHorizontalBlock"]:not(:has(> div:nth-child(9))) {
-                flex-direction: row !important;
-                flex-wrap: wrap !important;
-            }
-            
-            /* 3. Allow page-level horizontal panning */
-            .stApp {
-                overflow-x: auto !important;
-            }
-            
-            /* 4. Downscale fonts for better fit */
-            .cell-text, .header-text, div.stButton > button, .anchor-links a {
-                font-size: 11px !important;
-            }
-            
-            /* Hide non-essential UI decorators to save space */
-            .news-link { display: none !important; }
-            
-            /* Shrink KPIs so they don't dominate the portrait screen */
-            div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
-            div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
+            .stApp { overflow-x: auto !important; }
         }
     </style>
 """, unsafe_allow_html=True)
@@ -133,42 +152,30 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. AUTHENTICATION ---
-USER_DB = {
-    "mike.mastromattei@gmail.com": "Mike", "rhys.metler@gmail.com": "Rhys",
-    "greg.metler@yahoo.com": "Big M", "peterwilliamhammond@gmail.com": "Pete",
-    "ryan.torrie@gmail.com": "Torrie", "cochrane.jason@gmail.com": "Jay",
-    "mattjames.duncan@gmail.com": "Duncs", "gtraks@gmail.com": "Trakas",
-    "pgardner355@gmail.com": "Gardner", "aaronmetler@gmail.com": "Aaron"
-}
-SHARED_PWD = "playoffs2026"
-TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
+# --- 3. PASSWORDLESS AUTHENTICATION ---
+# Simplified GM tracking
+GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
     if st.session_state.authenticated: return True
-    auth_cookie = cookie_manager.get('user_email_cookie')
-    if auth_cookie in USER_DB:
-        st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, USER_DB[auth_cookie], USER_DB[auth_cookie]
+    auth_cookie = cookie_manager.get('user_identity_cookie')
+    if auth_cookie in GM_ROSTER:
+        st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, auth_cookie, auth_cookie
         return True
     return False
 
 if not is_authenticated():
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.title("🏒 Metler Playoff Pool Login")
+        st.title("🏒 Metler Playoff Pool")
         with st.form("login"):
-            saved = cookie_manager.get('saved_email_input') or ""
-            email = st.text_input("Email", value=saved).lower().strip()
-            pwd = st.text_input("Password", type="password")
-            rem = st.checkbox("Remember my email", value=bool(saved))
-            if st.form_submit_button("Sign In"):
-                if email in USER_DB and pwd == SHARED_PWD:
-                    if rem: cookie_manager.set('saved_email_input', email, expires_at=datetime.datetime.now()+datetime.timedelta(days=365), key="k1")
-                    else: cookie_manager.delete('saved_email_input', key="k_del")
-                    cookie_manager.set('user_email_cookie', email, expires_at=datetime.datetime.now()+datetime.timedelta(days=30), key="k2")
-                    st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, USER_DB[email], USER_DB[email]
-                    st.rerun()
-                else: st.error("Invalid credentials.")
+            st.markdown("### Welcome! Who are you?")
+            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+            if st.form_submit_button("Enter Pool"):
+                # 10-year cookie persistence. They never login again.
+                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                st.session_state.authenticated, st.session_state.gm_name, st.session_state.display_name = True, selected_gm, selected_gm
+                st.rerun()
     st.stop()
 
 # --- 4. STRICT API FETCHING ---
@@ -353,7 +360,7 @@ elif nav == "My Team":
     
     c1, c2, c3, c4, c5, c6, c7 = st.columns([1.4, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
     with c1: 
-        curr = st.selectbox("View another team", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
+        curr = st.selectbox("Other Teams", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
         if curr != st.session_state.sel_gm_val:
             st.session_state.sel_gm_val = curr
             st.rerun()
@@ -380,12 +387,13 @@ elif nav == "My Team":
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
-    t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
-    t_labels = ["Player", "Team", "Pos", "GP", "Points", "G", "A", "Round Picked", "Top Pick/Rnd"]
+    # Updated 10-column table to include Pts Yest for Mobile Portrait mode
+    t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
+    t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
     for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
     
     for _, r in my_df.iterrows():
-        r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
+        r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
         is_elim = r['Team'] in ELIMINATED
         t_cls = "eliminated" if is_elim else "plain-text"
         l_cls = "eliminated" if is_elim else "player-link"
@@ -400,17 +408,18 @@ elif nav == "My Team":
         r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
         r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
         r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-        r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-        r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-        r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-        r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+        r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['Pts_Yest']}</div>", unsafe_allow_html=True)
+        r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
+        r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
+        r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
+        r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
     
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
         if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = "(Select Team)"
-        jump_gm = st.selectbox("View another team", ["(Select Team)"] + gms, key="all_rost_jump")
+        jump_gm = st.selectbox("Other Teams", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
             st.session_state.nav_override = "My Team"
@@ -432,36 +441,34 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Streamlit Markdown anchors
-    anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
+    # Pure HTML Anchor links
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
     
-    st.markdown("➤ 🔥 indicates playing today", unsafe_allow_html=True)
+    st.markdown(f"""
+        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+                <div style='text-align: right;'>{anchor_html}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
-    col_legend, col_anchors = st.columns([1, 2])
-    with col_legend:
-        st.markdown("➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated", unsafe_allow_html=True)
-    with col_anchors:
-        st.markdown(f"<div style='text-align: right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
-    
-    st.divider()
-
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        hc1, hc2 = st.columns([9, 1])
-        with hc1:
-            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            st.markdown("<div style='text-align:right; margin-top:15px;'>[↑ Back to Top](#metler-playoff-pool)</div>", unsafe_allow_html=True)
-            
+        # Pure HTML Back to Top link
+        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
+        
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
-        t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
-        t_labels = ["Player", "Team", "Pos", "GP", "Points", "G", "A", "Round Picked", "Top Pick/Rnd"]
+        # Updated 10-column table to include Pts Yest for Mobile Portrait mode
+        t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
+        t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
         for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
         
         for _, r in g_df.iterrows():
-            r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.6, 0.6, 1.0, 1.0])
+            r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
             is_elim = r['Team'] in ELIMINATED
             t_cls = "eliminated" if is_elim else "plain-text"
             l_cls = "eliminated" if is_elim else "player-link"
@@ -476,7 +483,8 @@ elif nav == "All Rosters":
             r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
             r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
             r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-            r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-            r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-            r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-            r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+            r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['Pts_Yest']}</div>", unsafe_allow_html=True)
+            r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
+            r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
+            r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
+            r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
