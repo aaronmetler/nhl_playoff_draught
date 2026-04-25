@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 import extra_streamlit_components as stx
 import difflib
 import os
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+import urllib.parse
 
 # --- 1. SESSION & ROUTING INITIALIZATION ---
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
@@ -15,14 +15,6 @@ if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'is_jump' not in st.session_state: st.session_state.is_jump = False
-if 'pending_nav' not in st.session_state: st.session_state.pending_nav = None
-
-# "Memory Catcher": Grabs URL intent BEFORE the login screen can wipe it
-if "nav" in st.query_params:
-    if st.query_params["nav"] == "team":
-        st.session_state.pending_nav = "My Team"
-        st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
-    st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -51,7 +43,31 @@ st.markdown("""
         [data-testid="stMetric"] { display: flex; flex-direction: column; align-items: center; text-align: center; }
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
         
-        /* --- PURE HTML TABLE STYLING --- */
+        /* --- NATIVE LEAGUE TABLE STYLING --- */
+        .header-text { 
+            color: #888; font-weight: bold; font-size: 13px; 
+            text-align: center; border-bottom: 2px solid #ddd; 
+            padding-bottom: 5px; margin-bottom: 5px;
+            white-space: nowrap;
+        }
+        .header-left { text-align: left !important; }
+        
+        .cell-text { 
+            display: flex; align-items: center; justify-content: center;
+            height: 40px; font-size: 14px; text-align: center;
+            white-space: nowrap; border-bottom: 1px solid #f9f9f9;
+        }
+        .cell-left { text-align: left !important; justify-content: flex-start !important; }
+        
+        /* Invisible Buttons for GM Links (No HTTP Reloads!) */
+        div.stButton { height: 40px; display: flex; align-items: center; justify-content: flex-start; border-bottom: 1px solid #f9f9f9; }
+        div.stButton > button {
+            border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
+            text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
+        }
+        div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
+
+        /* --- PURE HTML ROSTER TABLE STYLING --- */
         .table-header { 
             display: flex; font-weight: bold; border-bottom: 2px solid #ddd; 
             padding-bottom: 5px; margin-bottom: 5px; color: #888; font-size: 13px; text-align: center; 
@@ -61,21 +77,8 @@ st.markdown("""
             height: 40px; font-size: 14px; text-align: center; border-bottom: 1px solid #f9f9f9;
         }
         .table-row:hover { background-color: #f1f8ff; }
-        .cell-left { text-align: left !important; justify-content: flex-start !important; }
-        .header-left { text-align: left !important; }
         
-        /* League View Columns */
-        .l-rank { width: 8%; }
-        .l-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
-        .l-gp { width: 8%; }
-        .l-pts { width: 12%; }
-        .l-g { width: 8%; }
-        .l-a { width: 8%; }
-        .l-yest { width: 12%; }
-        .l-back { width: 10%; }
-        .l-rem { width: 10%; }
-
-        /* Roster View Columns */
+        /* HTML Roster View Columns */
         .r-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
         .r-team { width: 8%; }
         .r-pos { width: 8%; }
@@ -87,10 +90,9 @@ st.markdown("""
         .r-rnd { width: 8%; }
         .r-top { width: 8%; }
         
-        /* Links and Aesthetics */
+        /* Links */
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
-        .plain-text { color: inherit; }
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
@@ -98,20 +100,28 @@ st.markdown("""
         @media (max-width: 768px) and (orientation: portrait) {
             .hide-portrait { display: none !important; width: 0 !important; overflow: hidden !important; }
             
-            /* Resize Remaining League Columns */
-            .l-rank { width: 15%; }
-            .l-name { width: 45%; }
-            .l-pts { width: 20%; }
-            .l-yest { width: 20%; }
+            /* Native League Table CSS Selection */
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) { flex-wrap: nowrap !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(3),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(5),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(6),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(8),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(9) {
+                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(1) { flex: 1 1 15% !important; width: 15% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(2) { flex: 1 1 45% !important; width: 45% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(4) { flex: 1 1 20% !important; width: 20% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(7) { flex: 1 1 20% !important; width: 20% !important; }
 
-            /* Resize Remaining Roster Columns */
+            /* HTML Roster Table Columns */
             .r-name { width: 50%; }
             .r-pts { width: 25%; }
             .r-yest { width: 25%; }
             
             /* Shrink Text to Fit Vertically */
-            .table-row, .table-header { font-size: 11px; }
-            .table-row > div, .table-header > div { white-space: normal; line-height: 1.2; padding: 0 2px; }
+            .table-row, .table-header, .cell-text, .header-text, div.stButton > button { font-size: 11px !important; }
+            .table-row > div, .table-header > div, .cell-text { white-space: normal; line-height: 1.2; padding: 0 2px; }
             .news-link { display: none !important; }
             
             /* Shrink KPIs */
@@ -121,14 +131,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Add invisible anchor point at the very top of the page
+# Add invisible anchor point at the top of the page
 st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. MAIN PAGE PASSWORDLESS AUTHENTICATION ---
+# --- 3. PASSWORDLESS AUTHENTICATION ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
@@ -150,14 +160,7 @@ if not is_authenticated():
                 cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
                 st.session_state.authenticated, st.session_state.display_name = True, selected_gm
                 st.rerun()
-    st.stop() # Blocks the rest of the app until they select a name
-
-# Process the deep link now that we are safely logged in
-if st.session_state.pending_nav:
-    st.session_state.main_nav = st.session_state.pending_nav
-    st.session_state.sel_gm_val = st.session_state.pending_gm
-    st.session_state.is_jump = True
-    st.session_state.pending_nav = None
+    st.stop() # Blocks the app execution until identity is verified
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -334,38 +337,30 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    st.markdown("""
-        <div class='table-header'>
-            <div class='l-rank'>Rank</div>
-            <div class='l-name header-left'>Name</div>
-            <div class='l-gp hide-portrait'>GP</div>
-            <div class='l-pts'>Points</div>
-            <div class='l-g hide-portrait'>G</div>
-            <div class='l-a hide-portrait'>A</div>
-            <div class='l-yest'>Pts Yest</div>
-            <div class='l-back hide-portrait'>Pts Back</div>
-            <div class='l-rem hide-portrait'>Remaining</div>
-        </div>
-    """, unsafe_allow_html=True)
+    # NATIVE STREAMLIT COLUMNS for the League Table (Zero browser reloads)
+    h_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
+    h_labels = ["Rank", "Name", "GP", "Points", "G", "A", "Pts Yest", "Pts Back", "Remaining"]
+    for i, l in enumerate(h_labels):
+        css_hide = "hide-portrait" if i not in [0, 1, 3, 6] else ""
+        h_cols[i].markdown(f"<div class='header-text {'header-left' if i==1 else ''} {css_hide}'>{l}</div>", unsafe_allow_html=True)
     
-    html_rows = []
     for _, r in lb.iterrows():
-        gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
-        row_html = f"""
-        <div class='table-row'>
-            <div class='l-rank'><b>{r['Rank']}</b></div>
-            <div class='l-name cell-left'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
-            <div class='l-gp hide-portrait'>{r['GP']}</div>
-            <div class='l-pts'><b>{int(r['Pts'])}</b></div>
-            <div class='l-g hide-portrait'>{r['G']}</div>
-            <div class='l-a hide-portrait'>{r['A']}</div>
-            <div class='l-yest'>{int(r['Pts_Yest'])}</div>
-            <div class='l-back hide-portrait'>{r['Back']}</div>
-            <div class='l-rem hide-portrait'>{int(r['Rem'])}</div>
-        </div>
-        """
-        html_rows.append(row_html)
-    st.markdown("".join(html_rows), unsafe_allow_html=True)
+        b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
+        b_cols[0].markdown(f"<div class='cell-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
+        with b_cols[1]:
+            # Web-socket native button! Eliminates the GET request redirect bug entirely.
+            if st.button(r['GM'], key=f"nav_{r['GM']}"):
+                st.session_state.sel_gm_val = r['GM']
+                st.session_state.main_nav = "My Team"
+                st.session_state.is_jump = True
+                st.rerun()
+        b_cols[2].markdown(f"<div class='cell-text hide-portrait'>{r['GP']}</div>", unsafe_allow_html=True)
+        b_cols[3].markdown(f"<div class='cell-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
+        b_cols[4].markdown(f"<div class='cell-text hide-portrait'>{r['G']}</div>", unsafe_allow_html=True)
+        b_cols[5].markdown(f"<div class='cell-text hide-portrait'>{r['A']}</div>", unsafe_allow_html=True)
+        b_cols[6].markdown(f"<div class='cell-text'>{int(r['Pts_Yest'])}</div>", unsafe_allow_html=True)
+        b_cols[7].markdown(f"<div class='cell-text hide-portrait'>{r['Back']}</div>", unsafe_allow_html=True)
+        b_cols[8].markdown(f"<div class='cell-text hide-portrait'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
 
 elif nav == "My Team":
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
@@ -391,9 +386,9 @@ elif nav == "My Team":
 
     st.markdown("""
         <div style='font-size: 0.85rem; color: #888; margin-bottom: 15px;'>
-            ➤ 🔥 indicates playing today<br>
-            ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
-            ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
+            <div>➤ 🔥 indicates playing today</div>
+            <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -481,6 +476,7 @@ elif nav == "All Rosters":
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
+        # PURE NATIVE MARKDOWN Anchors
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
         st.markdown(f"<div style='text-align:right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
     
@@ -489,11 +485,12 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        hc1, hc2 = st.columns([8, 2])
-        with hc1:
+        c_head, c_top = st.columns([8, 2])
+        with c_head:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            st.markdown("<div style='margin-top: 15px; text-align:right;'>**[↑ Back to Top](#top-of-page)**</div>", unsafe_allow_html=True)
+        with c_top:
+            # PURE NATIVE MARKDOWN Back to Top Link
+            st.markdown("<div style='text-align:right; padding-top:20px;'>**[↑ Back to Top](#top-of-page)**</div>", unsafe_allow_html=True)
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
