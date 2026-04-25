@@ -10,20 +10,19 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION & ROUTING INITIALIZATION ---
-if 'first_run' not in st.session_state: st.session_state.first_run = True
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
-if 'is_jump' not in st.session_state: st.session_state.is_jump = False
-if 'pending_nav' not in st.session_state: st.session_state.pending_nav = None
 
-# "Memory Catcher": Grabs URL intent BEFORE the login screen can wipe it
-if "nav" in st.query_params:
-    if st.query_params["nav"] == "team":
-        st.session_state.pending_nav = "My Team"
-        st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
-    st.query_params.clear()
+# --- THE GOLDEN FIX: Persistent URL Reader ---
+# We read the URL, but we DO NOT clear it here. We let it survive the login cycle.
+url_nav = st.query_params.get("nav")
+url_gm = st.query_params.get("gm")
+
+if url_nav == "team" and url_gm:
+    st.session_state.main_nav = "My Team"
+    st.session_state.sel_gm_val = urllib.parse.unquote(url_gm)
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -122,17 +121,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Add invisible anchor point at the top of the page
+st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
+
 cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. PASSWORDLESS AUTHENTICATION WITH BYPASS ---
+# --- 3. PASSWORDLESS AUTHENTICATION ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
     if st.session_state.authenticated: return True
     
-    # Instant Native Fetch (Streamlit 1.37+)
+    # Try native synchronous fetch (avoids flashing entirely on modern Streamlit)
     if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
         auth_cookie = st.context.cookies.get('user_identity_cookie')
         if auth_cookie in GM_ROSTER:
@@ -148,31 +150,17 @@ def is_authenticated():
     return False
 
 if not is_authenticated():
-    # If they are clicking a Deep Link on the very first load, PAUSE execution.
-    # This prevents the login form from flashing while the cookie finishes loading in the background.
-    if st.session_state.first_run and st.session_state.pending_nav:
-        st.session_state.first_run = False
-        st.stop() 
-    else:
-        st.session_state.first_run = False
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.title("🏒 Metler Playoff Pool")
-            with st.form("login"):
-                st.markdown("### Welcome! Who are you?")
-                selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-                if st.form_submit_button("Enter Pool"):
-                    cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                    st.session_state.authenticated, st.session_state.display_name = True, selected_gm
-                    st.rerun()
-        st.stop() # Execution halts here until they identify themselves
-
-# Now that we are fully authenticated, apply the Deep Link navigation
-if st.session_state.pending_nav:
-    st.session_state.main_nav = st.session_state.pending_nav
-    st.session_state.sel_gm_val = st.session_state.pending_gm
-    st.session_state.is_jump = True
-    st.session_state.pending_nav = None
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.title("🏒 Metler Playoff Pool")
+        with st.form("login"):
+            st.markdown("### Welcome! Who are you?")
+            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+            if st.form_submit_button("Enter Pool"):
+                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                st.session_state.authenticated, st.session_state.display_name = True, selected_gm
+                st.rerun()
+    st.stop() # App halts safely here if no cookie. URL param is preserved!
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -319,11 +307,8 @@ except Exception as e:
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
-with t_title: 
-    # Anchor point assigned to the main title
-    st.title("Metler Playoff Pool", anchor="top")
-with t_text: 
-    st.markdown(f"<div style='text-align: right; margin-top: 20px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+with t_title: st.markdown("<h1 style='margin-top: -10px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -331,14 +316,12 @@ st.divider()
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
+    # Explicitly clear the URL only when the user manually switches tabs
     if "nav" in st.query_params:
         st.query_params.clear()
         
     if selected_nav == "My Team":
-        if not st.session_state.is_jump:
-            st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
-        else:
-            st.session_state.is_jump = False
+        st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
             
     st.session_state.main_nav = selected_nav
     st.rerun()
@@ -398,6 +381,9 @@ elif nav == "My Team":
     with c1: 
         curr = st.selectbox("Other Teams", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
         if curr != st.session_state.sel_gm_val:
+            # Clear URL if they use the dropdown to prevent getting trapped by the deep link
+            if "nav" in st.query_params:
+                st.query_params.clear()
             st.session_state.sel_gm_val = curr
             st.rerun()
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz1")
@@ -487,13 +473,16 @@ elif nav == "All Rosters":
         total_df['Pts'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('pts', 0)).fillna(0).astype(int)
         total_df['G'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('g', 0)).fillna(0).astype(int)
         total_df['A'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
-        total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('gp', 0)).fillna(0).astype(int)
+        total_df['GP'] = total_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Pure Native Markdown formatting via columns ensures no HTML parsing bugs
-    c_leg, c_space, c_jump = st.columns([3, 0.5, 3.5])
+    # Custom Anchor Generator to prevent spaces/punctuation from breaking Streamlit Markdown
+    def make_anchor(name):
+        return "".join([c for c in name if c.isalnum()]).lower()
+
+    c_leg, c_jump = st.columns([1.5, 2.5])
     with c_leg:
         st.markdown("""
             <div style='font-size: 0.85rem; color: #888;'>
@@ -503,23 +492,24 @@ elif nav == "All Rosters":
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
-        st.write("") # Vertical spacing alignment
-        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"**Jump to:** {anchor_md}")
+        st.write("") # Vertical alignment
+        # Strictly parsed Markdown array
+        links = [f"[{g}](#{make_anchor(g)})" for g in sorted_gms]
+        st.write("**Jump to:** " + " | ".join(links))
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        c_head, c_top = st.columns([8, 2])
-        with c_head:
-            # Native Streamlit Subheader Anchor maps perfectly to the markdown links
-            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with c_top:
+        hc1, hc2 = st.columns([8, 2])
+        with hc1:
+            # Native subheader perfectly binds to the custom strictly-parsed anchor
+            st.subheader(f"{g} ({gm_pts} Points)", anchor=make_anchor(g))
+        with hc2:
             st.write("")
-            # Native Markdown linking to the native title anchor created at the top of the script
-            st.markdown("**[↑ Back to Top](#top)**")
+            st.write("")
+            st.write("**[↑ Back to Top](#top-of-page)**")
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
