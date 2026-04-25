@@ -87,69 +87,67 @@ st.markdown("""
         }
         div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
         
-        /* GM Header with Back to Top */
-        .gm-header-bar {
-            display: flex; justify-content: space-between; align-items: flex-end; 
-            border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
-        }
-        .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
-        
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            /* 10-column layout (Player rows) - Hide everything except Name, Pts, Pts Yest */
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(2),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(3),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(4),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(7),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(8),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(9),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(10) {
-                display: none !important;
+            /* Force horizontal blocks to act like a row on mobile */
+            [data-testid="stHorizontalBlock"] {
+                flex-direction: row !important;
+                flex-wrap: wrap !important;
             }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) { min-width: 100% !important; overflow: hidden !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(1) { width: 50% !important; min-width: 50% !important; max-width: 50% !important; flex: 1 1 50% !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(5) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(10)) > [data-testid="column"]:nth-child(6) { width: 25% !important; min-width: 25% !important; max-width: 25% !important; flex: 1 1 25% !important; }
 
-            /* 9-column layout (League rows) - Hide clutter, keep Rank, Name, Points, Pts Yesterday */
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(3),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(5),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(6),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(8),
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(9) {
-                display: none !important;
+            /* 9-Column Rows (League View) - Keep Rank, Name, Pts, Pts Yest */
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) { flex-wrap: nowrap !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(3),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(5),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(6),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(8),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(9) {
+                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
             }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) { min-width: 100% !important; overflow: hidden !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(1) { width: 15% !important; min-width: 15% !important; max-width: 15% !important; flex: 1 1 15% !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(2) { width: 45% !important; min-width: 45% !important; max-width: 45% !important; flex: 1 1 45% !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(4) { width: 20% !important; min-width: 20% !important; max-width: 20% !important; flex: 1 1 20% !important; }
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)):not(:has(> div:nth-child(10))) > [data-testid="column"]:nth-child(7) { width: 20% !important; min-width: 20% !important; max-width: 20% !important; flex: 1 1 20% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(1) { flex: 1 1 15% !important; width: 15% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(2) { flex: 1 1 45% !important; width: 45% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(4) { flex: 1 1 20% !important; width: 20% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(7) { flex: 1 1 20% !important; width: 20% !important; }
 
-            /* Downscale fonts to fit */
-            .cell-text, .header-text, div.stButton > button, .anchor-links a {
-                font-size: 11px !important;
+            /* 10-Column Rows (Rosters View) - Keep Player, Pts, Pts Yest */
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) { flex-wrap: nowrap !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(2),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(3),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(4),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(7),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(8),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(9),
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(10) {
+                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(1) { flex: 1 1 60% !important; width: 60% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(5) { flex: 1 1 20% !important; width: 20% !important; }
+            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(6) { flex: 1 1 20% !important; width: 20% !important; }
+
+            /* Downscale fonts so text fits beautifully */
+            .cell-text, .header-text, div.stButton > button {
+                font-size: 12px !important;
                 white-space: normal !important;
                 line-height: 1.2 !important;
+                height: auto !important;
+                min-height: 40px;
+                padding: 0 2px !important;
             }
             .news-link { display: none !important; }
-            div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
+            div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
             div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
         }
         
         /* --- MOBILE LANDSCAPE OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: landscape) {
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)) {
-                flex-direction: row !important;
-                flex-wrap: nowrap !important;
-                min-width: 700px !important; 
-            }
+            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 700px !important; }
             .stApp { overflow-x: auto !important; }
         }
     </style>
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-ET_ZONE = ZoneInfo("America/New_York")
+ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 3. PASSWORDLESS AUTHENTICATION ---
@@ -179,7 +177,6 @@ if not is_authenticated():
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
 
-# Failsafe URL Generators to prevent NameErrors & AttributeErrors on missing data
 def get_team_url(team_val):
     try:
         t = str(team_val).strip()
@@ -438,7 +435,6 @@ elif nav == "My Team":
         r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
     with c1: 
@@ -465,24 +461,26 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Pure HTML Anchors so they don't break inside the HTML wrapper
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold;'>{g}</a>" for g in sorted_gms])
+    # --- PURE NATIVE MARKDOWN LINKS ---
+    col_legend, col_links = st.columns([1, 2])
+    with col_legend:
+        st.markdown("➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated", unsafe_allow_html=True)
+    with col_links:
+        # Streamlit Native Markdown parses perfectly here
+        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
+        st.markdown(f"**Jump to:** {anchor_md}")
     
-    st.markdown(f"""
-        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
-            <div style='display: flex; justify-content: space-between; align-items: center;'>
-                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-                <div style='text-align: right;'><b>Jump to:</b> {anchor_html}</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.divider()
     
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Pure HTML Back to Top Link
-        st.markdown(f"<div class='gm-header-bar'><h3 id='{g.replace(' ', '-').lower()}'>{g} ({gm_pts} Points)</h3><a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
+        # Native Header Anchor & Native Back to Top Link
+        hc1, hc2 = st.columns([9, 1])
+        with hc1:
+            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
+        with hc2:
+            st.markdown("<div style='margin-top: 15px;'>[↑ Back to Top](#metler-playoff-pool)</div>", unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
