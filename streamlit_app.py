@@ -15,13 +15,18 @@ if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
+# Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
+if 'nav_override' not in st.session_state: st.session_state.nav_override = None
+if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
+if 'is_jump' not in st.session_state: st.session_state.is_jump = False
 
-# Handle Safe URL Navigation (Deep Linking from the HTML tables)
+# Handle Safe URL Navigation (Deep Linking)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.main_nav = "My Team"
+        st.session_state.nav_override = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
+        st.session_state.is_jump = True
     st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
@@ -50,12 +55,6 @@ st.markdown("""
         /* KPIs */
         [data-testid="stMetric"] { display: flex; flex-direction: column; align-items: center; text-align: center; }
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
-        
-        /* Links and Aesthetics */
-        .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
-        .player-link:hover { text-decoration: underline; color: #004c99; }
-        .eliminated { text-decoration: line-through; color: #aaa; }
-        .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
         /* --- PURE HTML TABLE STYLING --- */
         .table-header { 
@@ -91,6 +90,21 @@ st.markdown("""
         .r-a { width: 8%; }
         .r-rnd { width: 8%; }
         .r-top { width: 8%; }
+        
+        /* Links and Aesthetics */
+        .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
+        .player-link:hover { text-decoration: underline; color: #004c99; }
+        .plain-text { color: inherit; }
+        .eliminated { text-decoration: line-through; color: #aaa; }
+        .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
+        
+        /* Invisible Buttons for GM Links */
+        div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
+        div.stButton > button {
+            border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
+            text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
+        }
+        div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
@@ -299,9 +313,15 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
+if st.session_state.nav_override:
+    st.session_state.main_nav = st.session_state.nav_override
+    st.session_state.nav_override = None
+
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
+    if selected_nav == "My Team":
+        st.session_state.sel_gm_val = st.session_state.display_name
     st.session_state.main_nav = selected_nav
     st.rerun()
 
@@ -316,7 +336,6 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    # Pure HTML Table Header
     st.markdown("""
         <div class='table-header'>
             <div class='l-rank'>Rank</div>
@@ -325,13 +344,12 @@ if nav == "League":
             <div class='l-pts'>Points</div>
             <div class='l-g hide-mobile'>G</div>
             <div class='l-a hide-mobile'>A</div>
-            <div class='l-yest'>Pts Yesterday</div>
+            <div class='l-yest'>Pts Yest</div>
             <div class='l-back hide-mobile'>Pts Back</div>
             <div class='l-rem hide-mobile'>Remaining</div>
         </div>
     """, unsafe_allow_html=True)
     
-    # Pure HTML Table Rows
     html_rows = []
     for _, r in lb.iterrows():
         gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
@@ -373,7 +391,12 @@ elif nav == "My Team":
     with c6: st.metric("Players Active Today", len(my_df[my_df['Team'].isin(PLAYING_TODAY) & ~my_df['Team'].isin(ELIMINATED)]))
     with c7: st.metric("Players Remaining", len(my_df[~my_df['Team'].isin(ELIMINATED)]))
 
-    st.markdown("<p style='font-size: 0.85rem; color: #888;'>➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</p>", unsafe_allow_html=True)
+    st.markdown("""
+        <div style='font-size: 0.85rem; color: #888; margin-bottom: 15px;'>
+            ➤ 🔥 indicates playing today &nbsp; | &nbsp; ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
+            ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
+        </div>
+    """, unsafe_allow_html=True)
 
     if horizon != 'All Time':
         key_map = {'Yesterday':'yesterday', 'Last 7 Days':'last7', 'Last 14 Days':'last14', 'Last 30 Days':'last30'}
@@ -386,7 +409,6 @@ elif nav == "My Team":
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
-    # Pure HTML Table Header
     st.markdown("""
         <div class='table-header'>
             <div class='r-name'>Player</div>
@@ -402,7 +424,6 @@ elif nav == "My Team":
         </div>
     """, unsafe_allow_html=True)
     
-    # Pure HTML Table Rows
     html_rows = []
     for _, r in my_df.iterrows():
         safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
@@ -441,7 +462,7 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("Other Teams", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.main_nav = "My Team"
+            st.session_state.nav_override = "My Team"
             st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
             
@@ -460,31 +481,34 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Pure HTML Anchor links so Streamlit doesn't scramble them
-    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
-    
-    st.markdown(f"""
-        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
-            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
-            <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
-                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
-                <div style='text-align: right; margin-top: 5px;'><b>Jump to:</b> {anchor_html}</div>
+    # Use native st.columns to prevent Streamlit from stripping Markdown links
+    c_leg, c_jump = st.columns([2, 1.5])
+    with c_leg:
+        st.markdown("""
+            <div style='font-size: 0.85rem; color: #888;'>
+                ➤ 🔥 indicates playing today &nbsp; | &nbsp; ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
+                ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
             </div>
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    with c_jump:
+        # Native Streamlit Markdown Links
+        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
+        st.markdown(f"**Jump to:** {anchor_md}")
     
+    st.divider()
+
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Pure HTML Back to Top link
-        st.markdown(f"""
-            <div style='display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;'>
-                <h3 id='{g.replace(' ', '-').lower()}' style='color: #0068c9; margin: 0; padding: 0;'>{g} ({gm_pts} Points)</h3>
-                <a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
+        # Native Streamlit Anchor Routing
+        hc1, hc2 = st.columns([8, 2])
+        with hc1:
+            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
+        with hc2:
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            st.markdown("**[↑ Back to Top](#metler-playoff-pool)**")
+            
+        st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
         st.markdown("""
             <div class='table-header'>
@@ -500,6 +524,8 @@ elif nav == "All Rosters":
                 <div class='r-top hide-mobile'>Top Pick/Rnd</div>
             </div>
         """, unsafe_allow_html=True)
+        
+        g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
         html_rows = []
         for _, r in g_df.iterrows():
