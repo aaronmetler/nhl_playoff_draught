@@ -10,19 +10,22 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION & ROUTING INITIALIZATION ---
-if 'display_name' not in st.session_state: st.session_state.display_name = "Guest"
+if 'authenticated' not in st.session_state: st.session_state.authenticated = False
+if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
+if 'is_jump' not in st.session_state: st.session_state.is_jump = False
+if 'pending_nav' not in st.session_state: st.session_state.pending_nav = None
 
-# Handle Safe URL Navigation (Deep Linking) BEFORE anything else
+# "Memory Catcher": Grabs URL intent BEFORE the login screen can wipe it
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.main_nav = "My Team"
-        st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
+        st.session_state.pending_nav = "My Team"
+        st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
     st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
-st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒", initial_sidebar_state="expanded")
+st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
 
 st.markdown("""
     <style>
@@ -93,7 +96,6 @@ st.markdown("""
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            /* This class safely hides all non-essential columns on vertical phones */
             .hide-portrait { display: none !important; width: 0 !important; overflow: hidden !important; }
             
             /* Resize Remaining League Columns */
@@ -126,25 +128,36 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. SIDEBAR IDENTITY (No Blocking) ---
+# --- 3. MAIN PAGE PASSWORDLESS AUTHENTICATION ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-# Check cookie silently
-auth_cookie = cookie_manager.get('user_identity_cookie')
-if auth_cookie in GM_ROSTER and st.session_state.display_name == "Guest":
-    st.session_state.display_name = auth_cookie
+def is_authenticated():
+    if st.session_state.authenticated: return True
+    auth_cookie = cookie_manager.get('user_identity_cookie')
+    if auth_cookie in GM_ROSTER:
+        st.session_state.authenticated, st.session_state.display_name = True, auth_cookie
+        return True
+    return False
 
-with st.sidebar:
-    st.markdown("### 👤 User Profile")
-    st.markdown("Select your name to default your team view.")
-    
-    current_idx = GM_ROSTER.index(st.session_state.display_name) if st.session_state.display_name in GM_ROSTER else 0
-    selected_gm = st.selectbox("I am:", ["Guest"] + sorted(GM_ROSTER), index=0 if st.session_state.display_name == "Guest" else sorted(GM_ROSTER).index(st.session_state.display_name) + 1)
-    
-    if selected_gm != "Guest" and selected_gm != st.session_state.display_name:
-        cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-        st.session_state.display_name = selected_gm
-        st.rerun()
+if not is_authenticated():
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.title("🏒 Metler Playoff Pool")
+        with st.form("login"):
+            st.markdown("### Welcome! Who are you?")
+            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+            if st.form_submit_button("Enter Pool"):
+                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                st.session_state.authenticated, st.session_state.display_name = True, selected_gm
+                st.rerun()
+    st.stop() # Blocks the rest of the app until they select a name
+
+# Process the deep link now that we are safely logged in
+if st.session_state.pending_nav:
+    st.session_state.main_nav = st.session_state.pending_nav
+    st.session_state.sel_gm_val = st.session_state.pending_gm
+    st.session_state.is_jump = True
+    st.session_state.pending_nav = None
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -301,11 +314,11 @@ selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"],
 
 if selected_nav and selected_nav != st.session_state.main_nav:
     if selected_nav == "My Team":
-        # Default to the logged-in user if they click "My Team" naturally
-        if st.session_state.display_name != "Guest" and st.session_state.display_name in gms:
-            st.session_state.sel_gm_val = st.session_state.display_name
+        if not st.session_state.is_jump:
+            # Default to the logged-in user if they click "My Team" naturally
+            st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
         else:
-            st.session_state.sel_gm_val = gms[0]
+            st.session_state.is_jump = False
             
     st.session_state.main_nav = selected_nav
     st.rerun()
@@ -460,25 +473,27 @@ elif nav == "All Rosters":
     
     c_leg, c_jump = st.columns([1.5, 2])
     with c_leg:
-        # Instruction Legend formatted correctly
-        st.markdown("➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round", unsafe_allow_html=True)
+        st.markdown("""
+            <div style='font-size: 0.85rem; color: #888;'>
+                <div>➤ 🔥 indicates playing today</div>
+                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+                <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
+            </div>
+        """, unsafe_allow_html=True)
     with c_jump:
-        # PURE NATIVE MARKDOWN (No HTML wrapper to break the links)
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"**Jump to:** {anchor_md}")
+        st.markdown(f"<div style='text-align:right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        c_head, c_top = st.columns([8, 2])
-        with c_head:
-            # Native Streamlit Subheader Anchor
+        hc1, hc2 = st.columns([8, 2])
+        with hc1:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with c_top:
-            # PURE NATIVE MARKDOWN Back to top link
-            st.markdown("\n\n**[↑ Back to Top](#top-of-page)**")
+        with hc2:
+            st.markdown("<div style='margin-top: 15px; text-align:right;'>**[↑ Back to Top](#top-of-page)**</div>", unsafe_allow_html=True)
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
