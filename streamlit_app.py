@@ -14,17 +14,13 @@ if 'authenticated' not in st.session_state: st.session_state.authenticated = Fal
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
-if 'is_jump' not in st.session_state: st.session_state.is_jump = False
-if 'nav_override' not in st.session_state: st.session_state.nav_override = None
 
-# --- DEEP LINK CATCHER ---
-is_deep_link = "nav" in st.query_params
-if is_deep_link:
+# --- THE GOLDEN FIX: Persistent Deep Link Catcher ---
+# We DO NOT clear the URL here. We leave it so it survives the cookie-loading cycles.
+if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.nav_override = "My Team"
+        st.session_state.main_nav = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
-        st.session_state.is_jump = True
-    st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -92,7 +88,6 @@ st.markdown("""
         /* Links and Aesthetics */
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
-        .plain-text { color: inherit; }
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
@@ -123,27 +118,26 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Add invisible anchor point at the very top of the page
+# Pure HTML Anchor for the Top of the Page
 st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. PASSWORDLESS AUTHENTICATION WITH BYPASS ---
+# --- 3. PASSWORDLESS AUTHENTICATION ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
 def is_authenticated():
     if st.session_state.authenticated: return True
     
-    # Attempt instant, synchronous native cookie fetch (Streamlit 1.37+)
+    # Fast Native Streamlit Fetch (if available)
     if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
-        auth_cookie = st.context.cookies.get('user_identity_cookie')
-        if auth_cookie in GM_ROSTER:
-            st.session_state.authenticated, st.session_state.display_name = True, auth_cookie
+        if st.context.cookies.get('user_identity_cookie') in GM_ROSTER:
+            st.session_state.authenticated, st.session_state.display_name = True, st.context.cookies.get('user_identity_cookie')
             return True
             
-    # Fallback to standard component fetch
+    # Component Fallback
     auth_cookie = cookie_manager.get('user_identity_cookie')
     if auth_cookie in GM_ROSTER:
         st.session_state.authenticated, st.session_state.display_name = True, auth_cookie
@@ -152,22 +146,17 @@ def is_authenticated():
     return False
 
 if not is_authenticated():
-    # If they are clicking a deep link, temporarily bypass the blocking login to prevent getting stuck
-    if not is_deep_link:
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.title("🏒 Metler Playoff Pool")
-            with st.form("login"):
-                st.markdown("### Welcome! Who are you?")
-                selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-                if st.form_submit_button("Enter Pool"):
-                    cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                    st.session_state.authenticated, st.session_state.display_name = True, selected_gm
-                    st.rerun()
-        st.stop()
-    else:
-        # Assign a temporary safe identity to prevent app crashes while the cookie finishes loading
-        st.session_state.display_name = "Guest"
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.title("🏒 Metler Playoff Pool")
+        with st.form("login"):
+            st.markdown("### Welcome! Who are you?")
+            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+            if st.form_submit_button("Enter Pool"):
+                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                st.session_state.authenticated, st.session_state.display_name = True, selected_gm
+                st.rerun()
+    st.stop() # Halts execution safely while preserving the URL intent!
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -320,18 +309,15 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
-if st.session_state.nav_override:
-    st.session_state.main_nav = st.session_state.nav_override
-    st.session_state.nav_override = None
-
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
+    # Only clear the URL when the user explicitly clicks a new tab in the UI
+    if "nav" in st.query_params:
+        st.query_params.clear()
+        
     if selected_nav == "My Team":
-        if not st.session_state.is_jump:
-            st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
-        else:
-            st.session_state.is_jump = False
+        st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
             
     st.session_state.main_nav = selected_nav
     st.rerun()
@@ -363,7 +349,7 @@ if nav == "League":
     
     html_rows = []
     for _, r in lb.iterrows():
-        # Pure HTML <a> hyperlink ensures right-click "Open in New Tab" functionality
+        # Pure HTML <a> hyperlink ensures right-click "Open in New Tab" works
         gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
         row_html = f"""
         <div class='table-row'>
@@ -485,8 +471,7 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Pure Native Streamlit Columns & Markdown - DO NOT wrap the markdown links in HTML
-    c_leg, c_jump = st.columns([2, 2.5])
+    c_leg, c_jump = st.columns([1.5, 2])
     with c_leg:
         st.markdown("""
             <div style='font-size: 0.85rem; color: #888;'>
@@ -496,8 +481,9 @@ elif nav == "All Rosters":
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
-        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"**Jump to:** {anchor_md}")
+        # PURE HTML ANCHORS (Completely prevents plain-text formatting bugs)
+        anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold;'>{g}</a>" for g in sorted_gms])
+        st.markdown(f"<div style='text-align:right; margin-top: 5px;'><b>Jump to:</b> {anchor_html}</div>", unsafe_allow_html=True)
     
     st.divider()
 
@@ -506,12 +492,11 @@ elif nav == "All Rosters":
         
         hc1, hc2 = st.columns([8, 2])
         with hc1:
-            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
+            # Pure HTML Header Anchor ensures smooth scrolling
+            st.markdown(f"<h3 id='{g.replace(' ', '-').lower()}' style='color:#0068c9; margin-bottom:0;'>{g} ({gm_pts} Points)</h3>", unsafe_allow_html=True)
         with hc2:
-            st.write("")
-            st.write("")
-            # Pure Native Markdown - isolated to prevent Streamlit text parsing issues
-            st.markdown("**[↑ Back to Top](#top-of-page)**")
+            # Pure HTML Back to Top Link
+            st.markdown("<div style='margin-top: 10px; text-align:right;'><a href='#top-of-page' style='color:#0068c9; text-decoration:none; font-weight:bold;'>[↑ Back to Top]</a></div>", unsafe_allow_html=True)
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
