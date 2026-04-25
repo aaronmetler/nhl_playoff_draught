@@ -393,7 +393,8 @@ elif nav == "My Team":
 
     st.markdown("""
         <div style='font-size: 0.85rem; color: #888; margin-bottom: 15px;'>
-            ➤ 🔥 indicates playing today &nbsp; | &nbsp; ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
+            ➤ 🔥 indicates playing today<br>
+            ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
             ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
         </div>
     """, unsafe_allow_html=True)
@@ -455,18 +456,11 @@ elif nav == "My Team":
     st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
+    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
-    c1, c2, c3 = st.columns([1.5, 1.2, 7.3])
+    c1, c2 = st.columns([2, 8])
     with c1: 
-        if 'all_rost_jump' not in st.session_state: st.session_state.all_rost_jump = "(Select Team)"
-        jump_gm = st.selectbox("Other Teams", ["(Select Team)"] + gms, key="all_rost_jump")
-        if jump_gm != "(Select Team)":
-            st.session_state.sel_gm_val = jump_gm
-            st.session_state.nav_override = "My Team"
-            st.session_state.all_rost_jump = "(Select Team)"
-            st.rerun()
-            
-    with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
+        horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
     
     total_df = master_df.copy()
     if horizon != 'All Time':
@@ -481,17 +475,16 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Use native st.columns to prevent Streamlit from stripping Markdown links
     c_leg, c_jump = st.columns([2, 1.5])
     with c_leg:
         st.markdown("""
             <div style='font-size: 0.85rem; color: #888;'>
-                ➤ 🔥 indicates playing today &nbsp; | &nbsp; ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
+                ➤ 🔥 indicates playing today<br>
+                ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
                 ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
-        # Native Streamlit Markdown Links
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
         st.markdown(f"**Jump to:** {anchor_md}")
     
@@ -500,7 +493,6 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native Streamlit Anchor Routing
         hc1, hc2 = st.columns([8, 2])
         with hc1:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
