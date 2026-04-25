@@ -15,18 +15,13 @@ if 'gm_name' not in st.session_state: st.session_state.gm_name = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 
-# Bulletproof Navigation State Management
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
-if 'nav_override' not in st.session_state: st.session_state.nav_override = None
-if 'last_nav' not in st.session_state: st.session_state.last_nav = 'League'
-if 'is_jump' not in st.session_state: st.session_state.is_jump = False
 
-# Handle Safe URL Navigation (Deep Linking)
+# Handle Safe URL Navigation (Deep Linking from the HTML tables)
 if "nav" in st.query_params:
     if st.query_params["nav"] == "team":
-        st.session_state.nav_override = "My Team"
+        st.session_state.main_nav = "My Team"
         st.session_state.sel_gm_val = urllib.parse.unquote(st.query_params.get("gm", ""))
-        st.session_state.is_jump = True
     st.query_params.clear()
 
 # --- 2. CONFIG & CSS ---
@@ -56,98 +51,75 @@ st.markdown("""
         [data-testid="stMetric"] { display: flex; flex-direction: column; align-items: center; text-align: center; }
         div[data-testid="stMetricValue"] { font-size: 1.8rem; color: #0068c9; text-align: center; }
         
-        /* Native Table Styling */
-        .header-text { 
-            color: #888; font-weight: bold; font-size: 13px; 
-            text-align: center; border-bottom: 2px solid #ddd; 
-            padding-bottom: 5px; margin-bottom: 5px;
-            white-space: nowrap;
-        }
-        .header-left { text-align: left; }
-        
-        .cell-text { 
-            display: flex; align-items: center; justify-content: center;
-            height: 40px; font-size: 14px; text-align: center;
-            white-space: nowrap;
-        }
-        .cell-left { justify-content: flex-start; text-align: left; }
-        
         /* Links and Aesthetics */
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
-        .plain-text { color: inherit; }
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links */
-        div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
-        div.stButton > button {
-            border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
-            text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
+        /* --- PURE HTML TABLE STYLING --- */
+        .table-header { 
+            display: flex; font-weight: bold; border-bottom: 2px solid #ddd; 
+            padding-bottom: 5px; margin-bottom: 5px; color: #888; font-size: 13px; text-align: center; 
         }
-        div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
+        .table-row { 
+            display: flex; align-items: center; justify-content: center; 
+            height: 40px; font-size: 14px; text-align: center; border-bottom: 1px solid #f9f9f9;
+        }
+        .table-row:hover { background-color: #f1f8ff; }
+        .cell-left { text-align: left; justify-content: flex-start; }
+        
+        /* League View Columns */
+        .l-rank { width: 8%; }
+        .l-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
+        .l-gp { width: 8%; }
+        .l-pts { width: 12%; }
+        .l-g { width: 8%; }
+        .l-a { width: 8%; }
+        .l-yest { width: 12%; }
+        .l-back { width: 10%; }
+        .l-rem { width: 10%; }
+
+        /* Roster View Columns */
+        .r-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
+        .r-team { width: 8%; }
+        .r-pos { width: 8%; }
+        .r-gp { width: 8%; }
+        .r-pts { width: 10%; }
+        .r-yest { width: 10%; }
+        .r-g { width: 8%; }
+        .r-a { width: 8%; }
+        .r-rnd { width: 8%; }
+        .r-top { width: 8%; }
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            /* Force horizontal blocks to act like a row on mobile */
-            [data-testid="stHorizontalBlock"] {
-                flex-direction: row !important;
-                flex-wrap: wrap !important;
-            }
+            .hide-mobile { display: none !important; }
+            
+            /* Resize Remaining League Columns */
+            .l-rank { width: 15%; }
+            .l-name { width: 45%; }
+            .l-pts { width: 20%; }
+            .l-yest { width: 20%; }
 
-            /* 9-Column Rows (League View) - Keep Rank, Name, Pts, Pts Yest */
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) { flex-wrap: nowrap !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(3),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(5),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(6),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(8),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(9) {
-                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(1) { flex: 1 1 15% !important; width: 15% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(2) { flex: 1 1 45% !important; width: 45% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(4) { flex: 1 1 20% !important; width: 20% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(7) { flex: 1 1 20% !important; width: 20% !important; }
-
-            /* 10-Column Rows (Rosters View) - Keep Player, Pts, Pts Yest */
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) { flex-wrap: nowrap !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(2),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(3),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(4),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(7),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(8),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(9),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(10) {
-                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(1) { flex: 1 1 60% !important; width: 60% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(5) { flex: 1 1 20% !important; width: 20% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(10)) > [data-testid="column"]:nth-child(6) { flex: 1 1 20% !important; width: 20% !important; }
-
-            /* Downscale fonts so text fits beautifully */
-            .cell-text, .header-text, div.stButton > button {
-                font-size: 12px !important;
-                white-space: normal !important;
-                line-height: 1.2 !important;
-                height: auto !important;
-                min-height: 40px;
-                padding: 0 2px !important;
-            }
+            /* Resize Remaining Roster Columns */
+            .r-name { width: 50%; }
+            .r-pts { width: 25%; }
+            .r-yest { width: 25%; }
+            
+            /* Shrink Text */
+            .table-row, .table-header { font-size: 12px; }
             .news-link { display: none !important; }
-            div[data-testid="stMetricValue"] { font-size: 1.4rem !important; }
+            
+            /* Shrink KPIs */
+            div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
             div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
-        }
-        
-        /* --- MOBILE LANDSCAPE OPTIMIZATION --- */
-        @media (max-width: 768px) and (orientation: landscape) {
-            [data-testid="stHorizontalBlock"]:has(> div:nth-child(9)) { flex-direction: row !important; flex-wrap: nowrap !important; min-width: 700px !important; }
-            .stApp { overflow-x: auto !important; }
         }
     </style>
 """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
-ET_ZONE = ZoneInfo("America/New_York") # Standardizing to NHL Eastern Time
+ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
 # --- 3. PASSWORDLESS AUTHENTICATION ---
@@ -327,15 +299,9 @@ with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welc
 st.divider()
 
 # --- CLEAN NAVIGATION LOGIC ---
-if st.session_state.nav_override:
-    st.session_state.main_nav = st.session_state.nav_override
-    st.session_state.nav_override = None
-
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
-    if selected_nav == "My Team":
-        st.session_state.sel_gm_val = st.session_state.display_name
     st.session_state.main_nav = selected_nav
     st.rerun()
 
@@ -350,25 +316,40 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    h_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-    h_labels = ["Rank", "Name", "GP", "Points", "G", "A", "Pts Yesterday", "Pts Back", "Remaining Players"]
-    for i, l in enumerate(h_labels): h_cols[i].markdown(f"<div class='header-text {'header-left' if i==1 else ''}'>{l}</div>", unsafe_allow_html=True)
+    # Pure HTML Table Header
+    st.markdown("""
+        <div class='table-header'>
+            <div class='l-rank'>Rank</div>
+            <div class='l-name'>Name</div>
+            <div class='l-gp hide-mobile'>GP</div>
+            <div class='l-pts'>Points</div>
+            <div class='l-g hide-mobile'>G</div>
+            <div class='l-a hide-mobile'>A</div>
+            <div class='l-yest'>Pts Yesterday</div>
+            <div class='l-back hide-mobile'>Pts Back</div>
+            <div class='l-rem hide-mobile'>Remaining</div>
+        </div>
+    """, unsafe_allow_html=True)
     
+    # Pure HTML Table Rows
+    html_rows = []
     for _, r in lb.iterrows():
-        b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-        b_cols[0].markdown(f"<div class='cell-text plain-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
-        with b_cols[1]:
-            if st.button(r['GM'], key=f"nav_{r['GM']}"):
-                st.session_state.sel_gm_val = r['GM']
-                st.session_state.nav_override = "My Team"
-                st.rerun()
-        b_cols[2].markdown(f"<div class='cell-text plain-text'>{r['GP']}</div>", unsafe_allow_html=True)
-        b_cols[3].markdown(f"<div class='cell-text plain-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
-        b_cols[4].markdown(f"<div class='cell-text plain-text'>{r['G']}</div>", unsafe_allow_html=True)
-        b_cols[5].markdown(f"<div class='cell-text plain-text'>{r['A']}</div>", unsafe_allow_html=True)
-        b_cols[6].markdown(f"<div class='cell-text plain-text'>{int(r['Pts_Yest'])}</div>", unsafe_allow_html=True)
-        b_cols[7].markdown(f"<div class='cell-text plain-text'>{r['Back']}</div>", unsafe_allow_html=True)
-        b_cols[8].markdown(f"<div class='cell-text plain-text'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
+        gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
+        row_html = f"""
+        <div class='table-row'>
+            <div class='l-rank'><b>{r['Rank']}</b></div>
+            <div class='l-name'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
+            <div class='l-gp hide-mobile'>{r['GP']}</div>
+            <div class='l-pts'><b>{int(r['Pts'])}</b></div>
+            <div class='l-g hide-mobile'>{r['G']}</div>
+            <div class='l-a hide-mobile'>{r['A']}</div>
+            <div class='l-yest'>{int(r['Pts_Yest'])}</div>
+            <div class='l-back hide-mobile'>{r['Back']}</div>
+            <div class='l-rem hide-mobile'>{int(r['Rem'])}</div>
+        </div>
+        """
+        html_rows.append(row_html)
+    st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "My Team":
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
@@ -405,16 +386,28 @@ elif nav == "My Team":
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
-    t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-    t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
-    for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
+    # Pure HTML Table Header
+    st.markdown("""
+        <div class='table-header'>
+            <div class='r-name'>Player</div>
+            <div class='r-team hide-mobile'>Team</div>
+            <div class='r-pos hide-mobile'>Pos</div>
+            <div class='r-gp hide-mobile'>GP</div>
+            <div class='r-pts'>Points</div>
+            <div class='r-yest'>Pts Yest</div>
+            <div class='r-g hide-mobile'>G</div>
+            <div class='r-a hide-mobile'>A</div>
+            <div class='r-rnd hide-mobile'>Round Picked</div>
+            <div class='r-top hide-mobile'>Top Pick/Rnd</div>
+        </div>
+    """, unsafe_allow_html=True)
     
+    # Pure HTML Table Rows
+    html_rows = []
     for _, r in my_df.iterrows():
-        r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-        
         safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
         is_elim = safe_team in ELIMINATED
-        t_cls = "eliminated" if is_elim else "plain-text"
+        t_cls = "eliminated" if is_elim else ""
         l_cls = "eliminated" if is_elim else "player-link"
         fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
         
@@ -423,16 +416,22 @@ elif nav == "My Team":
         n_url = get_news_url(r['Player_Name'])
         t_url = get_team_url(r['Team'])
         
-        r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-        r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
-        r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
-        r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
-        r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-        r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['Pts_Yest']}</div>", unsafe_allow_html=True)
-        r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-        r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-        r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-        r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+        row_html = f"""
+        <div class='table-row'>
+            <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
+            <div class='r-team hide-mobile'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+            <div class='r-pos hide-mobile {t_cls}'>{r['Pos']}</div>
+            <div class='r-gp hide-mobile {t_cls}'>{r['GP']}</div>
+            <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
+            <div class='r-yest {t_cls}'>{r['Pts_Yest']}</div>
+            <div class='r-g hide-mobile {t_cls}'>{r['G']}</div>
+            <div class='r-a hide-mobile {t_cls}'>{r['A']}</div>
+            <div class='r-rnd hide-mobile {t_cls}'>{r['Round']}</div>
+            <div class='r-top hide-mobile {t_cls}'>{r['Top_Pick']}</div>
+        </div>
+        """
+        html_rows.append(row_html)
+    st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
     
@@ -442,7 +441,7 @@ elif nav == "All Rosters":
         jump_gm = st.selectbox("Other Teams", ["(Select Team)"] + gms, key="all_rost_jump")
         if jump_gm != "(Select Team)":
             st.session_state.sel_gm_val = jump_gm
-            st.session_state.nav_override = "My Team"
+            st.session_state.main_nav = "My Team"
             st.session_state.all_rost_jump = "(Select Team)"
             st.rerun()
             
@@ -461,39 +460,52 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # --- PURE NATIVE MARKDOWN LINKS ---
-    col_legend, col_links = st.columns([1, 2])
-    with col_legend:
-        st.markdown("➤ 🔥 indicates playing today<br>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated", unsafe_allow_html=True)
-    with col_links:
-        # Streamlit Native Markdown parses perfectly here
-        anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"**Jump to:** {anchor_md}")
+    # Pure HTML Anchor links so Streamlit doesn't scramble them
+    anchor_html = " | ".join([f"<a href='#{g.replace(' ', '-').lower()}' style='color:#0068c9; text-decoration:none; font-weight:bold; margin:0 5px;'>{g}</a>" for g in sorted_gms])
     
-    st.divider()
+    st.markdown(f"""
+        <div style='font-size: 0.85rem; color: #888; margin-bottom: 20px;'>
+            <div style='margin-bottom: 5px;'>➤ 🔥 indicates playing today</div>
+            <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+                <div style='text-align: right; margin-top: 5px;'><b>Jump to:</b> {anchor_html}</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Native Header Anchor & Native Back to Top Link
-        hc1, hc2 = st.columns([9, 1])
-        with hc1:
-            st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
-        with hc2:
-            st.markdown("<div style='margin-top: 15px;'>[↑ Back to Top](#metler-playoff-pool)</div>", unsafe_allow_html=True)
+        # Pure HTML Back to Top link
+        st.markdown(f"""
+            <div style='display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;'>
+                <h3 id='{g.replace(' ', '-').lower()}' style='color: #0068c9; margin: 0; padding: 0;'>{g} ({gm_pts} Points)</h3>
+                <a href='#metler-playoff-pool' style='color:#0068c9; text-decoration:none; font-size:14px; font-weight:500;'>[↑ Back to Top]</a>
+            </div>
+        """, unsafe_allow_html=True)
         
         g_df = total_df[total_df['GM'] == g].sort_values('Pts', ascending=False)
         
-        t_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-        t_labels = ["Player", "Team", "Pos", "GP", "Points", "Pts Yest", "G", "A", "Round Picked", "Top Pick/Rnd"]
-        for i, l in enumerate(t_labels): t_cols[i].markdown(f"<div class='header-text {'header-left' if i==0 else ''}'>{l}</div>", unsafe_allow_html=True)
+        st.markdown("""
+            <div class='table-header'>
+                <div class='r-name'>Player</div>
+                <div class='r-team hide-mobile'>Team</div>
+                <div class='r-pos hide-mobile'>Pos</div>
+                <div class='r-gp hide-mobile'>GP</div>
+                <div class='r-pts'>Points</div>
+                <div class='r-yest'>Pts Yest</div>
+                <div class='r-g hide-mobile'>G</div>
+                <div class='r-a hide-mobile'>A</div>
+                <div class='r-rnd hide-mobile'>Round Picked</div>
+                <div class='r-top hide-mobile'>Top Pick/Rnd</div>
+            </div>
+        """, unsafe_allow_html=True)
         
+        html_rows = []
         for _, r in g_df.iterrows():
-            r_cols = st.columns([2.0, 0.8, 0.6, 0.6, 0.8, 0.8, 0.6, 0.6, 1.0, 1.0])
-            
             safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
             is_elim = safe_team in ELIMINATED
-            t_cls = "eliminated" if is_elim else "plain-text"
+            t_cls = "eliminated" if is_elim else ""
             l_cls = "eliminated" if is_elim else "player-link"
             fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
             
@@ -502,13 +514,19 @@ elif nav == "All Rosters":
             n_url = get_news_url(r['Player_Name'])
             t_url = get_team_url(r['Team'])
             
-            r_cols[0].markdown(f"<div class='cell-text cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>", unsafe_allow_html=True)
-            r_cols[1].markdown(f"<div class='cell-text'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>", unsafe_allow_html=True)
-            r_cols[2].markdown(f"<div class='cell-text {t_cls}'>{r['Pos']}</div>", unsafe_allow_html=True)
-            r_cols[3].markdown(f"<div class='cell-text {t_cls}'>{r['GP']}</div>", unsafe_allow_html=True)
-            r_cols[4].markdown(f"<div class='cell-text {t_cls}'><b>{r['Pts']}</b></div>", unsafe_allow_html=True)
-            r_cols[5].markdown(f"<div class='cell-text {t_cls}'>{r['Pts_Yest']}</div>", unsafe_allow_html=True)
-            r_cols[6].markdown(f"<div class='cell-text {t_cls}'>{r['G']}</div>", unsafe_allow_html=True)
-            r_cols[7].markdown(f"<div class='cell-text {t_cls}'>{r['A']}</div>", unsafe_allow_html=True)
-            r_cols[8].markdown(f"<div class='cell-text {t_cls}'>{r['Round']}</div>", unsafe_allow_html=True)
-            r_cols[9].markdown(f"<div class='cell-text {t_cls}'>{r['Top_Pick']}</div>", unsafe_allow_html=True)
+            row_html = f"""
+            <div class='table-row'>
+                <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
+                <div class='r-team hide-mobile'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+                <div class='r-pos hide-mobile {t_cls}'>{r['Pos']}</div>
+                <div class='r-gp hide-mobile {t_cls}'>{r['GP']}</div>
+                <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
+                <div class='r-yest {t_cls}'>{r['Pts_Yest']}</div>
+                <div class='r-g hide-mobile {t_cls}'>{r['G']}</div>
+                <div class='r-a hide-mobile {t_cls}'>{r['A']}</div>
+                <div class='r-rnd hide-mobile {t_cls}'>{r['Round']}</div>
+                <div class='r-top hide-mobile {t_cls}'>{r['Top_Pick']}</div>
+            </div>
+            """
+            html_rows.append(row_html)
+        st.markdown("".join(html_rows), unsafe_allow_html=True)
