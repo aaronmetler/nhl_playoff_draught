@@ -58,15 +58,24 @@ st.markdown("""
         
         /* --- PURE HTML TABLE STYLING --- */
         .table-header { 
-            display: flex; font-weight: bold; border-bottom: 2px solid #ddd; 
-            padding-bottom: 5px; margin-bottom: 5px; color: #888; font-size: 13px; text-align: center; 
+            display: flex; border-bottom: 2px solid #ddd; 
+            padding-bottom: 5px; margin-bottom: 5px; 
         }
+        .table-header > div {
+            color: #888; font-weight: bold; font-size: 13px; text-align: center; white-space: nowrap;
+        }
+        
         .table-row { 
             display: flex; align-items: center; justify-content: center; 
-            height: 40px; font-size: 14px; text-align: center; border-bottom: 1px solid #f9f9f9;
+            height: 40px; border-bottom: 1px solid #f9f9f9;
+        }
+        .table-row > div {
+            font-size: 14px; text-align: center; white-space: nowrap;
         }
         .table-row:hover { background-color: #f1f8ff; }
-        .cell-left { text-align: left; justify-content: flex-start; }
+        
+        .cell-left { text-align: left !important; justify-content: flex-start !important; }
+        .header-left { text-align: left !important; }
         
         /* League View Columns */
         .l-rank { width: 8%; }
@@ -98,17 +107,16 @@ st.markdown("""
         .eliminated { text-decoration: line-through; color: #aaa; }
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
-        /* Invisible Buttons for GM Links */
-        div.stButton { height: 40px; display: flex; align-items: center; justify-content: center; }
-        div.stButton > button {
-            border: none !important; background: none !important; padding: 0 !important; color: #0068c9 !important;
-            text-decoration: none !important; font-size: 14px !important; font-weight: 600 !important; box-shadow: none !important;
+        /* GM Header with Back to Top */
+        .gm-header-bar {
+            display: flex; justify-content: space-between; align-items: flex-end; 
+            border-bottom: 2px solid #0068c9; padding-bottom: 5px; margin-bottom: 10px; margin-top: 30px;
         }
-        div.stButton > button:hover { text-decoration: underline !important; color: #004c99 !important; }
+        .gm-header-bar h3 { color: #0068c9; margin: 0; padding: 0; }
         
         /* --- MOBILE PORTRAIT OPTIMIZATION --- */
         @media (max-width: 768px) and (orientation: portrait) {
-            .hide-mobile { display: none !important; }
+            .hide-mobile { display: none !important; width: 0 !important; overflow: hidden !important; }
             
             /* Resize Remaining League Columns */
             .l-rank { width: 15%; }
@@ -121,8 +129,8 @@ st.markdown("""
             .r-pts { width: 25%; }
             .r-yest { width: 25%; }
             
-            /* Shrink Text */
-            .table-row, .table-header { font-size: 12px; }
+            /* Shrink Text to Fit Vertically */
+            .table-row > div, .table-header > div { font-size: 12px; white-space: normal; line-height: 1.2; padding: 0 2px; }
             .news-link { display: none !important; }
             
             /* Shrink KPIs */
@@ -339,7 +347,7 @@ if nav == "League":
     st.markdown("""
         <div class='table-header'>
             <div class='l-rank'>Rank</div>
-            <div class='l-name'>Name</div>
+            <div class='l-name header-left'>Name</div>
             <div class='l-gp hide-mobile'>GP</div>
             <div class='l-pts'>Points</div>
             <div class='l-g hide-mobile'>G</div>
@@ -356,7 +364,7 @@ if nav == "League":
         row_html = f"""
         <div class='table-row'>
             <div class='l-rank'><b>{r['Rank']}</b></div>
-            <div class='l-name'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
+            <div class='l-name cell-left'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
             <div class='l-gp hide-mobile'>{r['GP']}</div>
             <div class='l-pts'><b>{int(r['Pts'])}</b></div>
             <div class='l-g hide-mobile'>{r['G']}</div>
@@ -393,9 +401,9 @@ elif nav == "My Team":
 
     st.markdown("""
         <div style='font-size: 0.85rem; color: #888; margin-bottom: 15px;'>
-            ➤ 🔥 indicates playing today<br>
-            ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
-            ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
+            <div>➤ 🔥 indicates playing today</div>
+            <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+            <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -412,7 +420,7 @@ elif nav == "My Team":
     
     st.markdown("""
         <div class='table-header'>
-            <div class='r-name'>Player</div>
+            <div class='r-name header-left'>Player</div>
             <div class='r-team hide-mobile'>Team</div>
             <div class='r-pos hide-mobile'>Pos</div>
             <div class='r-gp hide-mobile'>GP</div>
@@ -456,11 +464,9 @@ elif nav == "My Team":
     st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "All Rosters":
-    st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
     
     c1, c2 = st.columns([2, 8])
-    with c1: 
-        horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
+    with c1: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz2")
     
     total_df = master_df.copy()
     if horizon != 'All Time':
@@ -475,36 +481,37 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
+    # Native Streamlit Markdown Links for Anchors
     c_leg, c_jump = st.columns([2, 1.5])
     with c_leg:
         st.markdown("""
             <div style='font-size: 0.85rem; color: #888;'>
-                ➤ 🔥 indicates playing today<br>
-                ➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated<br>
-                ➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round
+                <div>➤ 🔥 indicates playing today</div>
+                <div>➤ <span style='text-decoration: line-through;'>Strikethrough</span> indicates player is eliminated</div>
+                <div>➤ 🥇 🥈 🥉 indicates the 1st, 2nd, and 3rd highest scoring pick in their respective draft round</div>
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
         anchor_md = " | ".join([f"[{g}](#{g.replace(' ', '-').lower()})" for g in sorted_gms])
-        st.markdown(f"**Jump to:** {anchor_md}")
+        st.markdown(f"<div style='text-align:right;'>**Jump to:** {anchor_md}</div>", unsafe_allow_html=True)
     
     st.divider()
 
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
+        # Native Streamlit Subheader for perfectly bound Anchors
         hc1, hc2 = st.columns([8, 2])
         with hc1:
             st.subheader(f"{g} ({gm_pts} Points)", anchor=g.replace(' ', '-').lower())
         with hc2:
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            st.markdown("**[↑ Back to Top](#metler-playoff-pool)**")
+            st.markdown("<div style='margin-top: 15px; text-align:right;'>**[↑ Back to Top](#metler-playoff-pool)**</div>", unsafe_allow_html=True)
             
         st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-top: 2px solid #0068c9;'>", unsafe_allow_html=True)
         
         st.markdown("""
             <div class='table-header'>
-                <div class='r-name'>Player</div>
+                <div class='r-name header-left'>Player</div>
                 <div class='r-team hide-mobile'>Team</div>
                 <div class='r-pos hide-mobile'>Pos</div>
                 <div class='r-gp hide-mobile'>GP</div>
