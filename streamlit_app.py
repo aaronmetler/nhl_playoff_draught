@@ -10,19 +10,11 @@ import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. SESSION MEMORY & DEEP LINK PRESERVATION ---
+# --- 1. SESSION MEMORY ---
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
-
-# We read the URL immediately, but DO NOT clear it. This allows the deep link
-# to survive the background authentication process.
-url_nav = st.query_params.get("nav")
-url_gm = st.query_params.get("gm")
-
-if url_nav == "team" and url_gm:
-    st.session_state.main_nav = "My Team"
-    st.session_state.sel_gm_val = urllib.parse.unquote(url_gm)
+if 'temp_auth' not in st.session_state: st.session_state.temp_auth = None
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -118,37 +110,42 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. ROBUST AUTHENTICATION WITH LOADING GATE ---
+# --- 3. BULLETPROOF AUTHENTICATION & DEEP LINK HANDLER ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
+is_auth = False
 
-def check_auth():
-    if st.session_state.get('authenticated'): return True
-    
-    # Try native synchronous fetch (Instant on modern Streamlit)
-    if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
-        if st.context.cookies.get('user_identity_cookie') in GM_ROSTER:
-            st.session_state.authenticated = True
-            st.session_state.display_name = st.context.cookies.get('user_identity_cookie')
-            return True
-            
-    return False
+# 1. Check instant session bypass (makes the login button feel instant)
+if st.session_state.temp_auth in GM_ROSTER:
+    is_auth = True
+    st.session_state.display_name = st.session_state.temp_auth
 
-if not check_auth():
-    # Component Fallback Fetch
-    auth_cookie = cookie_manager.get('user_identity_cookie')
-    if auth_cookie in GM_ROSTER:
-        st.session_state.authenticated = True
-        st.session_state.display_name = auth_cookie
-        st.rerun() # Refresh to clear any loading states
+# 2. Check native Streamlit 1.37+ cookies (instant, no iframe needed)
+if not is_auth and hasattr(st, 'context') and hasattr(st.context, 'cookies'):
+    val = st.context.cookies.get('user_identity_cookie')
+    if val in GM_ROSTER:
+        is_auth = True
+        st.session_state.display_name = val
+
+# 3. Check iframe fallback component
+if not is_auth:
+    val = cookie_manager.get('user_identity_cookie')
+    if val in GM_ROSTER:
+        is_auth = True
+        st.session_state.display_name = val
+
+# If we are STILL not authenticated, handle the login flow
+if not is_auth:
+    if 'auth_cycles' not in st.session_state:
+        st.session_state.auth_cycles = 0
         
-    if not st.session_state.get('authenticated'):
-        # Give the cookie manager 1 render cycle to talk to the browser before blocking the screen
-        if 'auth_wait' not in st.session_state:
-            st.session_state.auth_wait = True
-            st.markdown("<br><br><h3 style='text-align:center; color:#0068c9;'>Loading roster... 🏒</h3>", unsafe_allow_html=True)
-            st.stop() # Halts execution, but lets the frontend send the cookie!
-            
-        # If we reach here, the cookie manager checked and found nothing. Genuine logout.
+    st.session_state.auth_cycles += 1
+    
+    # We MUST NOT use st.stop() or st.rerun() on the first 2 cycles, otherwise the iframe never renders!
+    if st.session_state.auth_cycles <= 2:
+        st.markdown("<br><br><h3 style='text-align:center; color:#0068c9;'>Loading roster... 🏒</h3>", unsafe_allow_html=True)
+        st.stop() # Wait, we stop execution of the REST of the script, but the component above finishes.
+    else:
+        # After waiting, we present the login form
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             st.title("🏒 Metler Playoff Pool")
@@ -157,10 +154,19 @@ if not check_auth():
                 selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
                 if st.form_submit_button("Enter Pool"):
                     cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                    st.session_state.authenticated = True
-                    st.session_state.display_name = selected_gm
+                    st.session_state.temp_auth = selected_gm # Bypass the cookie delay instantly
                     st.rerun()
         st.stop()
+
+# --- EXECUTE DEEP LINK NAVIGATION (Now that we are successfully logged in!) ---
+url_nav = st.query_params.get("nav")
+url_gm = st.query_params.get("gm")
+
+if url_nav == "team" and url_gm:
+    st.session_state.main_nav = "My Team"
+    st.session_state.sel_gm_val = urllib.parse.unquote(url_gm)
+    st.query_params.clear() # Consumed! Wipe it clean.
+    st.rerun()
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -247,16 +253,19 @@ def get_all_historical_points(pids):
 def get_playoff_status():
     elim, today = set(), []
     
-    # Recursive Failsafe: Finds matchups no matter how deep the NHL hides them in the JSON
+    # Ultra-forgiving recursive JSON hunter. It finds matchup data no matter how deep the NHL nests it.
     def _find_eliminations(data_node, elim_set):
         if isinstance(data_node, dict):
-            if 'matchupTeams' in data_node and len(data_node['matchupTeams']) == 2:
+            if 'matchupTeams' in data_node and isinstance(data_node['matchupTeams'], list) and len(data_node['matchupTeams']) == 2:
                 m = data_node['matchupTeams']
                 try:
-                    t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
-                    t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
-                    w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
-                    w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
+                    t1_node, t2_node = m[0].get('team', {}), m[1].get('team', {})
+                    t1 = t1_node.get('abbrev') or m[0].get('teamAbbrev') or m[0].get('abbrev')
+                    t2 = t2_node.get('abbrev') or m[1].get('teamAbbrev') or m[1].get('abbrev')
+                    
+                    w1 = int(m[0].get('seriesRecord', {}).get('wins', m[0].get('wins', 0)))
+                    w2 = int(m[1].get('seriesRecord', {}).get('wins', m[1].get('wins', 0)))
+                    
                     if w1 == 4 and t2: elim_set.add(str(t2).upper())
                     if w2 == 4 and t1: elim_set.add(str(t1).upper())
                 except Exception:
@@ -267,10 +276,9 @@ def get_playoff_status():
             for item in data_node:
                 _find_eliminations(item, elim_set)
 
-    # Check both potential bracket URLs
     urls_to_try = [
-        "https://api-web.nhle.com/v1/playoff-bracket/20252026",
-        "https://api-web.nhle.com/v1/playoff-bracket/2026"
+        "https://api-web.nhle.com/v1/playoff-bracket/2026",
+        "https://api-web.nhle.com/v1/playoff-bracket/20252026"
     ]
     
     for url in urls_to_try:
@@ -279,7 +287,7 @@ def get_playoff_status():
             if res1.status_code == 200:
                 _find_eliminations(res1.json(), elim)
                 break 
-        except Exception:
+        except:
             continue 
             
     try:
@@ -289,10 +297,9 @@ def get_playoff_status():
             for d in res2.json().get('gameWeek', []):
                 if d['date'] == today_str:
                     for g in d.get('games', []):
-                        today.append(g['awayTeam']['abbrev'])
-                        today.append(g['homeTeam']['abbrev'])
-    except Exception:
-        pass
+                        today.append(g.get('awayTeam', {}).get('abbrev'))
+                        today.append(g.get('homeTeam', {}).get('abbrev'))
+    except: pass
     
     return elim, today
 
@@ -352,13 +359,12 @@ st.divider()
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
-    # Explicitly clear the URL only when the user interacts with the tabs
-    if "nav" in st.query_params:
-        st.query_params.clear()
-        
     st.session_state.main_nav = selected_nav
     if selected_nav == "My Team":
         st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
+    # Wiping query params if they click a tab to avoid getting stuck in a loop
+    if "nav" in st.query_params:
+        st.query_params.clear()
     st.rerun()
 
 nav = st.session_state.main_nav
@@ -388,6 +394,7 @@ if nav == "League":
     
     html_rows = []
     for _, r in lb.iterrows():
+        # HTML <a> tag triggers browser hard reload. URL is preserved and caught by auth logic above.
         gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
         row_html = f"""
         <div class='table-row'>
@@ -415,8 +422,6 @@ elif nav == "My Team":
     with c1: 
         curr = st.selectbox("Other Teams", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
         if curr != st.session_state.sel_gm_val:
-            if "nav" in st.query_params:
-                st.query_params.clear()
             st.session_state.sel_gm_val = curr
             st.rerun()
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz1")
@@ -512,7 +517,7 @@ elif nav == "All Rosters":
     sorted_gms = gm_totals['GM'].tolist()
     
     def make_anchor(name):
-        return "".join([c for c in name if c.isalnum()]).lower()
+        return "gm-" + "".join([c for c in name if c.isalnum()]).lower()
 
     c_leg, c_jump = st.columns([1.5, 2.5])
     with c_leg:
