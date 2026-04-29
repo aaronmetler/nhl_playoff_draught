@@ -73,35 +73,26 @@ st.markdown("""
             white-space: nowrap; border-bottom: 1px solid #f9f9f9;
         }
         
-        /* CRITICAL: Make Streamlit buttons look exactly like HTML links */
-        [data-testid="stButton"] {
+        /* MAGIC CSS: Makes Streamlit buttons look exactly like Hyperlinks! */
+        div[data-testid="stButton"] {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
             height: 40px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: flex-start; 
             border-bottom: 1px solid #f9f9f9;
         }
-        [data-testid="stButton"] > button {
+        div[data-testid="stButton"] button {
             background: transparent !important;
             border: none !important;
             box-shadow: none !important;
-            color: #0068c9 !important;
             padding: 0 !important;
-            min-height: 0 !important;
-            height: auto !important;
-            line-height: normal !important;
-            display: flex !important;
-            justify-content: flex-start !important;
+            color: #0068c9 !important;
+            font-weight: 600 !important;
+            font-size: 14px !important;
         }
-        [data-testid="stButton"] > button:hover {
+        div[data-testid="stButton"] button:hover {
             text-decoration: underline !important;
             color: #004c99 !important;
-            background: transparent !important;
-        }
-        [data-testid="stButton"] > button p {
-            font-size: 14px !important;
-            font-weight: 600 !important;
-            margin: 0 !important;
         }
         
         /* HTML View Columns */
@@ -144,7 +135,7 @@ st.markdown("""
             .r-pts { width: 25%; }
             .r-yest { width: 25%; }
             
-            .table-row, .table-header, .cell-text, .header-text { font-size: 11px; }
+            .table-row, .table-header, .cell-text, .header-text, div[data-testid="stButton"] button { font-size: 11px !important; }
             .table-row > div, .table-header > div, .cell-text { white-space: normal; line-height: 1.2; padding: 0 2px; }
             .news-link { display: none !important; }
             div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
@@ -274,10 +265,10 @@ def get_all_historical_points(pids):
     return data
 
 @st.cache_data(ttl=3600)
-def get_playoff_status_v5():
+def get_playoff_status_v7(): 
     elim, today = set(), []
     
-    # 1. APPLY MANUAL OVERRIDES
+    # 1. APPLY MANUAL OVERRIDES (Failsafe)
     if 'MANUAL_ELIMINATED' in globals():
         for t in MANUAL_ELIMINATED:
             elim.add(str(t).strip().upper())
@@ -285,6 +276,20 @@ def get_playoff_status_v5():
     # 2. DYNAMIC NHL API HUNTER
     def _find_elim(node):
         if isinstance(node, dict):
+            # FORMAT A: 2026 API Structure
+            if 'topSeedTeam' in node and 'bottomSeedTeam' in node:
+                try:
+                    t1 = node['topSeedTeam'].get('abbrev', '')
+                    t2 = node['bottomSeedTeam'].get('abbrev', '')
+                    w1 = int(node.get('topSeedWins', 0)) # Found at top level of series!
+                    w2 = int(node.get('bottomSeedWins', 0)) # Found at top level of series!
+                    
+                    if w1 == 4 and t2: elim.add(str(t2).upper())
+                    if w2 == 4 and t1: elim.add(str(t1).upper())
+                except Exception:
+                    pass
+                    
+            # FORMAT B: Legacy/Alternate API Structure
             if 'matchupTeams' in node and isinstance(node['matchupTeams'], list) and len(node['matchupTeams']) == 2:
                 try:
                     m = node['matchupTeams']
@@ -298,6 +303,8 @@ def get_playoff_status_v5():
                     if w2 == 4 and t1: elim.add(str(t1).upper())
                 except Exception:
                     pass
+                    
+            # Drill deeper
             for v in node.values():
                 _find_elim(v)
         elif isinstance(node, list):
@@ -315,6 +322,7 @@ def get_playoff_status_v5():
             res1 = requests.get(url, headers=HEADERS, timeout=5)
             if res1.status_code == 200:
                 _find_elim(res1.json())
+                break # Stop if successful
         except Exception:
             continue 
             
@@ -336,7 +344,7 @@ def get_playoff_status_v5():
 
 # --- 5. DATA PREPARATION ---
 rosters = get_all_rosters_parallel()
-ELIMINATED, PLAYING_TODAY = get_playoff_status_v5()
+ELIMINATED, PLAYING_TODAY = get_playoff_status_v7()
 
 try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
@@ -406,7 +414,7 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    # NATIVE COLUMNS for the League Table (Zero browser reloads = zero login loops)
+    # NATIVE COLUMNS for the League Table
     h_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
     h_labels = ["Rank", "Name", "GP", "Points", "G", "A", "Pts Yest", "Pts Back", "Remaining"]
     for i, l in enumerate(h_labels):
@@ -417,7 +425,7 @@ if nav == "League":
         b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
         b_cols[0].markdown(f"<div class='cell-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
         with b_cols[1]:
-            # This is a WebSocket Button disguised flawlessly as a Hyperlink via CSS
+            # WebSocket Button disguised as a Hyperlink
             if st.button(r['GM'], key=f"nav_{r['GM']}"):
                 st.session_state.sel_gm_val = r['GM']
                 st.session_state.main_nav = "My Team"
@@ -612,21 +620,3 @@ elif nav == "All Rosters":
             """
             html_rows.append(row_html)
         st.markdown("".join(html_rows), unsafe_allow_html=True)
-
-st.write("---")
-st.subheader("🚨 LIVE API DIAGNOSTIC TEST 🚨")
-try:
-    # Testing the 2026 Bracket
-    diagnostic_res = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026", headers=HEADERS, timeout=5)
-    
-    if diagnostic_res.status_code == 200:
-        data = diagnostic_res.json()
-        if not data:
-            st.warning("API connected, but returned EMPTY data `{}`. The NHL hasn't populated this link yet.")
-        else:
-            st.success("API is responding! Here is the raw data the NHL is sending us right now:")
-            st.json(data) # This will format the JSON beautifully with clickable dropdowns
-    else:
-        st.error(f"API is broken or returning an error code: {diagnostic_res.status_code}")
-except Exception as e:
-    st.error(f"Failed to connect: {e}")
