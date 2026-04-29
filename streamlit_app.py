@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
+import time
 from zoneinfo import ZoneInfo
 import extra_streamlit_components as stx
 import difflib
@@ -10,22 +11,16 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION MEMORY & URL CATCHER ---
-# Catch the URL intent IMMEDIATELY before the app has a chance to reload or block
-if 'url_caught' not in st.session_state:
-    if "nav" in st.query_params:
-        st.session_state.caught_nav = st.query_params.get("nav")
-        st.session_state.caught_gm = st.query_params.get("gm")
-    else:
-        st.session_state.caught_nav = None
-        st.session_state.caught_gm = None
-    
-    st.session_state.url_caught = True
-    st.query_params.clear() # Wipe the URL bar cleanly
+# Catch the URL intent IMMEDIATELY before the app does anything else
+if "nav" in st.query_params:
+    st.session_state.pending_nav = st.query_params.get("nav")
+    st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
+    st.query_params.clear() # Clean the URL bar immediately
 
-if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
+if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -121,62 +116,47 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. ROBUST AUTHENTICATION WITH GRACE PERIOD ---
+# --- 3. ROBUST AUTHENTICATION WITH LOADING GATE ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-def is_authenticated():
-    if st.session_state.authenticated: return True
-    
-    # Try native synchronous fetch
-    if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
-        auth_cookie = st.context.cookies.get('user_identity_cookie')
-        if auth_cookie in GM_ROSTER:
-            st.session_state.authenticated = True
-            st.session_state.display_name = auth_cookie
-            return True
-            
-    # Component Fallback Fetch
-    auth_cookie = cookie_manager.get('user_identity_cookie')
+# Fetch cookie safely
+auth_cookie = cookie_manager.get('user_identity_cookie')
+
+if not st.session_state.authenticated:
     if auth_cookie in GM_ROSTER:
         st.session_state.authenticated = True
         st.session_state.display_name = auth_cookie
-        return True
-        
-    return False
+    else:
+        # Give the cookie manager 2 execution cycles (0.6 seconds) to load from the browser
+        if 'cookie_cycles' not in st.session_state:
+            st.session_state.cookie_cycles = 0
+            
+        if st.session_state.cookie_cycles < 2:
+            st.session_state.cookie_cycles += 1
+            st.markdown("<br><br><h3 style='text-align:center; color:#0068c9;'>Loading roster... 🏒</h3>", unsafe_allow_html=True)
+            time.sleep(0.3)
+            st.rerun() # Refresh to check the cookie again
+        else:
+            # If 0.6 seconds passed and STILL no cookie, they are genuinely logged out. Show form.
+            c1, c2, c3 = st.columns([1, 2, 1])
+            with c2:
+                st.title("🏒 Metler Playoff Pool")
+                with st.form("login"):
+                    st.markdown("### Welcome! Who are you?")
+                    selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+                    if st.form_submit_button("Enter Pool"):
+                        cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                        st.session_state.authenticated = True
+                        st.session_state.display_name = selected_gm
+                        st.rerun()
+            st.stop() # Halt execution to prevent unauthenticated access
 
-if not is_authenticated():
-    if 'cookie_wait_cycles' not in st.session_state:
-        st.session_state.cookie_wait_cycles = 0
-        
-    # Give the cookie 2 mini-cycles to load before showing the form
-    if st.session_state.cookie_wait_cycles < 2:
-        st.session_state.cookie_wait_cycles += 1
-        import time
-        time.sleep(0.1) 
-        st.rerun() 
-        
-    # If the grace period ends and STILL no cookie, they are genuinely logged out
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.title("🏒 Metler Playoff Pool")
-        with st.form("login"):
-            st.markdown("### Welcome! Who are you?")
-            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-            if st.form_submit_button("Enter Pool"):
-                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                # FIXED: Flag the session as explicitly authenticated so we bypass this gate on the rerun
-                st.session_state.authenticated = True 
-                st.session_state.display_name = selected_gm
-                st.rerun()
-    st.stop()
-
-# --- EXECUTE CAUGHT NAVIGATION ---
-# Now that we are confirmed logged in, apply the link they clicked!
-if st.session_state.caught_nav == "team":
-    st.session_state.main_nav = "My Team"
-    st.session_state.sel_gm_val = urllib.parse.unquote(st.session_state.caught_gm)
-    st.session_state.caught_nav = None # Clear memory so we don't loop
-    st.session_state.caught_gm = None
+# --- EXECUTE CAUGHT NAVIGATION (Only runs once fully logged in!) ---
+if 'pending_nav' in st.session_state and st.session_state.pending_nav:
+    st.session_state.main_nav = st.session_state.pending_nav
+    st.session_state.sel_gm_val = st.session_state.pending_gm
+    st.session_state.pending_nav = None
+    st.session_state.pending_gm = None
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -262,26 +242,50 @@ def get_all_historical_points(pids):
 @st.cache_data(ttl=3600)
 def get_playoff_status():
     elim, today = set(), []
+    
+    # Check both potential bracket URLs for API resilience
+    urls_to_try = [
+        "https://api-web.nhle.com/v1/playoff-bracket/2026",
+        "https://api-web.nhle.com/v1/playoff-bracket/20252026"
+    ]
+    
+    for url in urls_to_try:
+        try:
+            res1 = requests.get(url, headers=HEADERS, timeout=5)
+            if res1.status_code == 200:
+                data = res1.json()
+                
+                # Fetch series array based on standard OR nested 2026 structure
+                series_list = data.get('series', [])
+                if not series_list:
+                    for r in data.get('rounds', []):
+                        series_list.extend(r.get('series', []))
+                        
+                for s in series_list:
+                    m = s.get('matchupTeams', [])
+                    if len(m) == 2:
+                        # Deep fetch team abbreviations
+                        t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
+                        t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
+                        
+                        # Deep fetch series wins
+                        w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
+                        w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
+                        
+                        # If a team hits 4 wins, the other is eliminated
+                        if w1 == 4 and t2: elim.add(t2.upper())
+                        if w2 == 4 and t1: elim.add(t1.upper())
+                break # If successful, exit the URL loop
+        except:
+            continue # Try next URL if one fails
+            
     try:
-        res1 = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026", headers=HEADERS, timeout=5)
-        res1.raise_for_status()
-        series = res1.json().get('series', []) or [s for r in res1.json().get('rounds', []) for s in r.get('series', [])]
-        for s in series:
-            m = s.get('matchupTeams', [])
-            if len(m) == 2:
-                t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
-                t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
-                w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
-                w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
-                
-                if w1 == 4 and t2: elim.add(t2)
-                if w2 == 4 and t1: elim.add(t1)
-                
         res2 = requests.get("https://api-web.nhle.com/v1/schedule/now", headers=HEADERS, timeout=5)
         res2.raise_for_status()
         today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
         today = [t['abbrev'] for d in res2.json().get('gameWeek', []) if d['date'] == today_str for g in d.get('games', []) for t in [g['awayTeam'], g['homeTeam']]]
     except: pass
+    
     return elim, today
 
 # --- 5. DATA PREPARATION ---
@@ -329,8 +333,10 @@ except Exception as e:
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
-with t_title: st.markdown("<h1 style='margin-top: -10px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
-with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+with t_title: 
+    st.title("Metler Playoff Pool", anchor="top")
+with t_text: 
+    st.markdown(f"<div style='text-align: right; margin-top: 20px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -445,7 +451,7 @@ elif nav == "My Team":
     
     html_rows = []
     for _, r in my_df.iterrows():
-        safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
+        safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
         is_elim = safe_team in ELIMINATED
         t_cls = "eliminated" if is_elim else ""
         l_cls = "eliminated" if is_elim else "player-link"
@@ -542,7 +548,7 @@ elif nav == "All Rosters":
         
         html_rows = []
         for _, r in g_df.iterrows():
-            safe_team = str(r['Team']).strip() if pd.notna(r['Team']) else ""
+            safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
             is_elim = safe_team in ELIMINATED
             t_cls = "eliminated" if is_elim else ""
             l_cls = "eliminated" if is_elim else "player-link"
