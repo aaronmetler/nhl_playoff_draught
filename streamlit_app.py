@@ -612,3 +612,21 @@ elif nav == "All Rosters":
             """
             html_rows.append(row_html)
         st.markdown("".join(html_rows), unsafe_allow_html=True)
+
+st.write("---")
+st.subheader("🚨 LIVE API DIAGNOSTIC TEST 🚨")
+try:
+    # Testing the 2026 Bracket
+    diagnostic_res = requests.get("https://api-web.nhle.com/v1/playoff-bracket/2026", headers=HEADERS, timeout=5)
+    
+    if diagnostic_res.status_code == 200:
+        data = diagnostic_res.json()
+        if not data:
+            st.warning("API connected, but returned EMPTY data `{}`. The NHL hasn't populated this link yet.")
+        else:
+            st.success("API is responding! Here is the raw data the NHL is sending us right now:")
+            st.json(data) # This will format the JSON beautifully with clickable dropdowns
+    else:
+        st.error(f"API is broken or returning an error code: {diagnostic_res.status_code}")
+except Exception as e:
+    st.error(f"Failed to connect: {e}")
