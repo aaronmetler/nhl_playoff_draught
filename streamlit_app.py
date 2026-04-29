@@ -10,12 +10,19 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION MEMORY & URL CATCHER ---
-# Catch the URL intent IMMEDIATELY before the app does anything else
-if "nav" in st.query_params:
-    st.session_state.pending_nav = st.query_params.get("nav")
-    st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
-    st.query_params.clear() # Instantly clean the URL bar
+# Catch the URL intent IMMEDIATELY before the app has a chance to reload or block
+if 'url_caught' not in st.session_state:
+    if "nav" in st.query_params:
+        st.session_state.caught_nav = st.query_params.get("nav")
+        st.session_state.caught_gm = st.query_params.get("gm")
+    else:
+        st.session_state.caught_nav = None
+        st.session_state.caught_gm = None
+    
+    st.session_state.url_caught = True
+    st.query_params.clear() # Wipe the URL bar cleanly
 
+if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
@@ -114,54 +121,62 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. ROBUST AUTHENTICATION WITH LOADING GATE ---
+# --- 3. ROBUST AUTHENTICATION WITH GRACE PERIOD ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-# Attempt to fetch cookie safely
-auth_cookie = None
-if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
-    auth_cookie = st.context.cookies.get('user_identity_cookie')
-if not auth_cookie:
-    auth_cookie = cookie_manager.get('user_identity_cookie')
-
-# Validate
-is_auth = auth_cookie in GM_ROSTER
-
-if is_auth:
-    st.session_state.display_name = auth_cookie
+def is_authenticated():
+    if st.session_state.authenticated: return True
     
-    # Process the deep link ONLY after confirming identity
-    if 'pending_nav' in st.session_state and st.session_state.pending_nav:
-        st.session_state.main_nav = st.session_state.pending_nav
-        st.session_state.sel_gm_val = st.session_state.pending_gm
-        st.session_state.pending_nav = None
-        st.session_state.pending_gm = None
-        st.rerun() # Force instant UI transition
+    # Try native synchronous fetch
+    if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
+        auth_cookie = st.context.cookies.get('user_identity_cookie')
+        if auth_cookie in GM_ROSTER:
+            st.session_state.authenticated = True
+            st.session_state.display_name = auth_cookie
+            return True
+            
+    # Component Fallback Fetch
+    auth_cookie = cookie_manager.get('user_identity_cookie')
+    if auth_cookie in GM_ROSTER:
+        st.session_state.authenticated = True
+        st.session_state.display_name = auth_cookie
+        return True
+        
+    return False
 
-else:
-    # Not authenticated. Give the browser 1 full second to load the cookie before throwing the login screen.
+if not is_authenticated():
     if 'cookie_wait_cycles' not in st.session_state:
         st.session_state.cookie_wait_cycles = 0
         
+    # Give the cookie 2 mini-cycles to load before showing the form
     if st.session_state.cookie_wait_cycles < 2:
         st.session_state.cookie_wait_cycles += 1
-        st.markdown("<br><br><h3 style='text-align:center; color:#0068c9;'>Loading roster... 🏒</h3>", unsafe_allow_html=True)
         import time
-        time.sleep(0.5)
-        st.rerun() # Loop back to check the cookie again
-    else:
-        # After 1 second of trying, they are genuinely logged out. Show the form.
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c2:
-            st.title("🏒 Metler Playoff Pool")
-            with st.form("login"):
-                st.markdown("### Welcome! Who are you?")
-                selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-                if st.form_submit_button("Enter Pool"):
-                    cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                    st.session_state.display_name = selected_gm
-                    st.rerun()
-        st.stop() # Halt execution to prevent unauthenticated access
+        time.sleep(0.1) 
+        st.rerun() 
+        
+    # If the grace period ends and STILL no cookie, they are genuinely logged out
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        st.title("🏒 Metler Playoff Pool")
+        with st.form("login"):
+            st.markdown("### Welcome! Who are you?")
+            selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+            if st.form_submit_button("Enter Pool"):
+                cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                # FIXED: Flag the session as explicitly authenticated so we bypass this gate on the rerun
+                st.session_state.authenticated = True 
+                st.session_state.display_name = selected_gm
+                st.rerun()
+    st.stop()
+
+# --- EXECUTE CAUGHT NAVIGATION ---
+# Now that we are confirmed logged in, apply the link they clicked!
+if st.session_state.caught_nav == "team":
+    st.session_state.main_nav = "My Team"
+    st.session_state.sel_gm_val = urllib.parse.unquote(st.session_state.caught_gm)
+    st.session_state.caught_nav = None # Clear memory so we don't loop
+    st.session_state.caught_gm = None
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -254,13 +269,11 @@ def get_playoff_status():
         for s in series:
             m = s.get('matchupTeams', [])
             if len(m) == 2:
-                # FIXED LOGIC: Extracts deeply nested 2026 API abbreviation formats
                 t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
                 t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
                 w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
                 w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
                 
-                # If team 1 hits 4 wins, team 2 is eliminated.
                 if w1 == 4 and t2: elim.add(t2)
                 if w2 == 4 and t1: elim.add(t1)
                 
@@ -316,10 +329,8 @@ except Exception as e:
 t_logo, t_title, t_text = st.columns([0.6, 6.0, 3.4])
 with t_logo:
     if os.path.exists("logo.png"): st.image("logo.png", width=55)
-with t_title: 
-    st.title("Metler Playoff Pool", anchor="top")
-with t_text: 
-    st.markdown(f"<div style='text-align: right; margin-top: 20px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
+with t_title: st.markdown("<h1 style='margin-top: -10px; font-size: 2.6rem;'>Metler Playoff Pool</h1>", unsafe_allow_html=True)
+with t_text: st.markdown(f"<div style='text-align: right; margin-top: 5px;'>Welcome, <b>{st.session_state.display_name}</b></div>", unsafe_allow_html=True)
 
 st.divider()
 
@@ -327,10 +338,9 @@ st.divider()
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
+    st.session_state.main_nav = selected_nav
     if selected_nav == "My Team":
         st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
-            
-    st.session_state.main_nav = selected_nav
     st.rerun()
 
 nav = st.session_state.main_nav
