@@ -10,19 +10,15 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 # --- 1. SESSION MEMORY & URL CATCHER ---
-# Catch the URL intent IMMEDIATELY, but do not clear it yet.
-if 'deep_nav' not in st.session_state:
-    if "nav" in st.query_params:
-        st.session_state.deep_nav = st.query_params.get("nav")
-        st.session_state.deep_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
-    else:
-        st.session_state.deep_nav = None
-        st.session_state.deep_gm = None
-    st.query_params.clear() # Instantly clean the URL bar
+# Catch the URL intent IMMEDIATELY and store it safely
+if "nav" in st.query_params:
+    st.session_state.saved_nav = st.query_params.get("nav")
+    st.session_state.saved_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
+    st.query_params.clear()
 
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
-if 'display_name' not in st.session_state: st.session_state.display_name = None
+if 'display_name' not in st.session_state: st.session_state.display_name = "Guest"
 if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 
 # --- 2. CONFIG & CSS ---
@@ -119,32 +115,17 @@ cookie_manager = stx.CookieManager(key="cookie_manager")
 ET_ZONE = ZoneInfo("America/New_York")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 
-# --- 3. CLEAN AUTHENTICATION GATE ---
+# --- 3. CLEAN & SAFE AUTHENTICATION GATE ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-# 1. Native Streamlit Cookie Check (Instant)
-if not st.session_state.authenticated and hasattr(st, 'context') and hasattr(st.context, 'cookies'):
-    val = st.context.cookies.get('user_identity_cookie')
-    if val in GM_ROSTER:
-        st.session_state.authenticated = True
-        st.session_state.display_name = val
-
-# 2. Component Fallback Check
 if not st.session_state.authenticated:
-    val = cookie_manager.get('user_identity_cookie')
-    if val in GM_ROSTER:
+    auth_cookie = cookie_manager.get('user_identity_cookie')
+    if auth_cookie in GM_ROSTER:
         st.session_state.authenticated = True
-        st.session_state.display_name = val
+        st.session_state.display_name = auth_cookie
+        st.rerun() # Instantly applies login without manual intervention
 
-# 3. Handle Unauthorized State
 if not st.session_state.authenticated:
-    # On the very first run, the cookie manager needs one execution cycle to read the browser.
-    # We stop execution cleanly here. It auto-reruns instantly when the cookie returns.
-    if 'first_render' not in st.session_state:
-        st.session_state.first_render = False
-        st.stop()
-        
-    # If it auto-reruns and STILL reaches here, the user is genuinely logged out.
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         st.title("🏒 Metler Playoff Pool")
@@ -156,14 +137,15 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.display_name = selected_gm
                 st.rerun()
-    st.stop() # Prevent access to the rest of the app
+    st.stop()
 
-# --- APPLY DEEP LINK NAVIGATION (Runs safely ONLY when logged in) ---
-if st.session_state.deep_nav == "team":
+# --- APPLY DEEP LINK NAVIGATION ---
+# This ONLY runs once fully authenticated. Resolves the redirect trap.
+if st.session_state.get("saved_nav") == "team":
     st.session_state.main_nav = "My Team"
-    st.session_state.sel_gm_val = st.session_state.deep_gm
-    st.session_state.deep_nav = None # Consume the link memory
-    st.session_state.deep_gm = None
+    st.session_state.sel_gm_val = st.session_state.get("saved_gm")
+    st.session_state.saved_nav = None
+    st.session_state.saved_gm = None
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -247,46 +229,44 @@ def get_all_historical_points(pids):
     return data
 
 @st.cache_data(ttl=3600)
-def get_playoff_status():
+def get_playoff_status_v4(): # Name changed to bust old empty cache immediately!
     elim, today = set(), []
     
     # RECURSIVE NHL HUNTER: Safely parses the JSON tree looking for matchups no matter the nesting structure.
-    def extract_eliminations(node):
+    def _find_elim(node):
         if isinstance(node, dict):
             if 'matchupTeams' in node and isinstance(node['matchupTeams'], list) and len(node['matchupTeams']) == 2:
-                teams = node['matchupTeams']
                 try:
-                    # Look for abbreviations wherever they exist
-                    t1 = teams[0].get('team', {}).get('abbrev') or teams[0].get('teamAbbrev') or teams[0].get('abbrev')
-                    t2 = teams[1].get('team', {}).get('abbrev') or teams[1].get('teamAbbrev') or teams[1].get('abbrev')
+                    m = node['matchupTeams']
+                    t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev') or m[0].get('abbrev') or ""
+                    t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev') or m[1].get('abbrev') or ""
                     
-                    # Look for wins
-                    w1 = int(teams[0].get('seriesRecord', {}).get('wins', teams[0].get('wins', 0)))
-                    w2 = int(teams[1].get('seriesRecord', {}).get('wins', teams[1].get('wins', 0)))
+                    w1 = int(m[0].get('seriesRecord', {}).get('wins', m[0].get('wins', 0)))
+                    w2 = int(m[1].get('seriesRecord', {}).get('wins', m[1].get('wins', 0)))
                     
                     if w1 == 4 and t2: elim.add(str(t2).upper())
                     if w2 == 4 and t1: elim.add(str(t1).upper())
                 except Exception:
                     pass
-            # Drill deeper
             for v in node.values():
-                extract_eliminations(v)
+                _find_elim(v)
         elif isinstance(node, list):
             for item in node:
-                extract_eliminations(item)
+                _find_elim(item)
 
-    # Scan the endpoints actively used by the NHL
+    # Scan endpoints actively used by the NHL
     urls_to_try = [
         "https://api-web.nhle.com/v1/playoff-bracket/2026",
         "https://api-web.nhle.com/v1/playoff-bracket/20252026",
-        "https://api-web.nhle.com/v1/playoff-bracket/2025"
+        "https://api-web.nhle.com/v1/playoff-bracket/2025",
+        "https://api-web.nhle.com/v1/playoff-bracket/20242025"
     ]
     
     for url in urls_to_try:
         try:
             res1 = requests.get(url, headers=HEADERS, timeout=5)
             if res1.status_code == 200:
-                extract_eliminations(res1.json())
+                _find_elim(res1.json())
         except Exception:
             continue 
             
@@ -297,8 +277,10 @@ def get_playoff_status():
             for d in res2.json().get('gameWeek', []):
                 if d['date'] == today_str:
                     for g in d.get('games', []):
-                        today.append(g.get('awayTeam', {}).get('abbrev'))
-                        today.append(g.get('homeTeam', {}).get('abbrev'))
+                        t1 = g.get('awayTeam', {}).get('abbrev')
+                        t2 = g.get('homeTeam', {}).get('abbrev')
+                        if t1: today.append(t1)
+                        if t2: today.append(t2)
     except Exception:
         pass
     
@@ -306,7 +288,7 @@ def get_playoff_status():
 
 # --- 5. DATA PREPARATION ---
 rosters = get_all_rosters_parallel()
-ELIMINATED, PLAYING_TODAY = get_playoff_status()
+ELIMINATED, PLAYING_TODAY = get_playoff_status_v4()
 
 try:
     df_raw = pd.read_csv("2026 NHL Draught - Sheet1.csv")
@@ -514,7 +496,7 @@ elif nav == "All Rosters":
     sorted_gms = gm_totals['GM'].tolist()
     
     def make_anchor(name):
-        return "".join([c for c in name if c.isalnum()]).lower()
+        return "gm-" + "".join([c for c in name if c.isalnum()]).lower()
 
     c_leg, c_jump = st.columns([1.5, 2.5])
     with c_leg:
