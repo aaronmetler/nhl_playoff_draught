@@ -3,6 +3,8 @@ import pandas as pd
 import requests
 import datetime
 import time
+import re
+import json
 from zoneinfo import ZoneInfo
 import extra_streamlit_components as stx
 import difflib
@@ -107,10 +109,11 @@ st.markdown("""
         .r-rnd { width: 8%; }
         .r-top { width: 8%; }
         
-        /* Links */
+        /* Links and Eliminated Styles */
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
         .eliminated { text-decoration: line-through; color: #aaa; }
+        .eliminated a { text-decoration: line-through !important; color: #aaa !important; } /* Crosses through links inside eliminated cells */
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
         /* MOBILE PORTRAIT OPTIMIZATION */
@@ -475,7 +478,7 @@ elif nav == "My Team":
         my_df['Pts'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('pts', 0)).fillna(0).astype(int)
         my_df['G'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('g', 0)).fillna(0).astype(int)
         my_df['A'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
-        my_df['GP'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('gp', 0)).fillna(0).astype(int)
+        my_df['GP'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
@@ -499,7 +502,11 @@ elif nav == "My Team":
         safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
         is_elim = safe_team in ELIMINATED
         t_cls = "eliminated" if is_elim else ""
-        l_cls = "eliminated" if is_elim else "player-link"
+        
+        # We apply 'player-link' class always for base styling (color/font), 
+        # and then 'eliminated' handles the line-through.
+        l_cls = "player-link" 
+        
         fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
         
         p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
@@ -509,8 +516,8 @@ elif nav == "My Team":
         
         row_html = f"""
         <div class='table-row'>
-            <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
-            <div class='r-team hide-portrait'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+            <div class='r-name cell-left {t_cls}'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
+            <div class='r-team hide-portrait {t_cls}'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
             <div class='r-pos hide-portrait {t_cls}'>{r['Pos']}</div>
             <div class='r-gp hide-portrait {t_cls}'>{r['GP']}</div>
             <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
@@ -596,7 +603,10 @@ elif nav == "All Rosters":
             safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
             is_elim = safe_team in ELIMINATED
             t_cls = "eliminated" if is_elim else ""
-            l_cls = "eliminated" if is_elim else "player-link"
+            
+            # Base link styling always applied
+            l_cls = "player-link"
+            
             fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
             
             p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
@@ -606,8 +616,8 @@ elif nav == "All Rosters":
             
             row_html = f"""
             <div class='table-row'>
-                <div class='r-name cell-left'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
-                <div class='r-team hide-portrait'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
+                <div class='r-name cell-left {t_cls}'><a href='{p_url}' target='_blank' class='{l_cls}'>{p_name}</a><a href='{n_url}' target='_blank' class='news-link'>📄</a>{fire}</div>
+                <div class='r-team hide-portrait {t_cls}'><a href='{t_url}' target='_blank' class='{l_cls}'>{safe_team}</a></div>
                 <div class='r-pos hide-portrait {t_cls}'>{r['Pos']}</div>
                 <div class='r-gp hide-portrait {t_cls}'>{r['GP']}</div>
                 <div class='r-pts {t_cls}'><b>{r['Pts']}</b></div>
