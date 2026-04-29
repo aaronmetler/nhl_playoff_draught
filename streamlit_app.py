@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
-import time
 import re
 import json
 from zoneinfo import ZoneInfo
@@ -62,40 +61,16 @@ st.markdown("""
         .cell-left { text-align: left !important; justify-content: flex-start !important; }
         .header-left { text-align: left !important; }
         
-        /* NATIVE LEAGUE TABLE STYLING */
-        .header-text { 
-            color: #888; font-weight: bold; font-size: 13px; 
-            text-align: center; border-bottom: 2px solid #ddd; 
-            padding-bottom: 5px; margin-bottom: 5px;
-            white-space: nowrap;
-        }
-        .cell-text { 
-            display: flex; align-items: center; justify-content: center;
-            height: 40px; font-size: 14px; text-align: center;
-            white-space: nowrap; border-bottom: 1px solid #f9f9f9;
-        }
-        
-        /* MAGIC CSS: Makes Streamlit buttons look exactly like Hyperlinks! */
-        div[data-testid="stButton"] {
-            display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            height: 40px; 
-            border-bottom: 1px solid #f9f9f9;
-        }
-        div[data-testid="stButton"] button {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0 !important;
-            color: #0068c9 !important;
-            font-weight: 600 !important;
-            font-size: 14px !important;
-        }
-        div[data-testid="stButton"] button:hover {
-            text-decoration: underline !important;
-            color: #004c99 !important;
-        }
+        /* League View Columns */
+        .l-rank { width: 8%; }
+        .l-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
+        .l-gp { width: 8%; }
+        .l-pts { width: 12%; }
+        .l-g { width: 8%; }
+        .l-a { width: 8%; }
+        .l-yest { width: 12%; }
+        .l-back { width: 10%; }
+        .l-rem { width: 10%; }
         
         /* HTML View Columns */
         .r-name { width: 24%; display: flex; align-items: center; justify-content: flex-start; text-align: left; }
@@ -113,34 +88,27 @@ st.markdown("""
         .player-link { color: #0068c9; text-decoration: none; font-weight: 500; }
         .player-link:hover { text-decoration: underline; color: #004c99; }
         .eliminated { text-decoration: line-through; color: #aaa; }
-        .eliminated a { text-decoration: line-through !important; color: #aaa !important; } /* Crosses through links inside eliminated cells */
+        .eliminated a { text-decoration: line-through !important; color: #aaa !important; } 
         .news-link { text-decoration: none; font-size: 12px; margin-left: 5px; }
         
         /* MOBILE PORTRAIT OPTIMIZATION */
         @media (max-width: 768px) and (orientation: portrait) {
             .hide-portrait { display: none !important; width: 0 !important; overflow: hidden !important; }
             
-            /* Native League Table Selection */
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) { flex-wrap: nowrap !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(3),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(5),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(6),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(8),
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(9) {
-                display: none !important; width: 0 !important; flex: 0 0 0 !important; padding: 0 !important; margin: 0 !important; overflow: hidden !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(1) { flex: 1 1 15% !important; width: 15% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(2) { flex: 1 1 45% !important; width: 45% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(4) { flex: 1 1 20% !important; width: 20% !important; }
-            [data-testid="stHorizontalBlock"]:has(> [data-testid="column"]:nth-child(9)):not(:has(> [data-testid="column"]:nth-child(10))) > [data-testid="column"]:nth-child(7) { flex: 1 1 20% !important; width: 20% !important; }
+            /* League View Resize */
+            .l-rank { width: 15%; }
+            .l-name { width: 45%; }
+            .l-pts { width: 20%; }
+            .l-yest { width: 20%; }
 
+            /* Roster View Resize */
             .r-name { width: 50%; }
             .r-pts { width: 25%; }
             .r-yest { width: 25%; }
             
-            .table-row, .table-header, .cell-text, .header-text, div[data-testid="stButton"] button { font-size: 11px !important; }
-            .table-row > div, .table-header > div, .cell-text { white-space: normal; line-height: 1.2; padding: 0 2px; }
-            .news-link { display: none !important; }
+            .table-row, .table-header { font-size: 11px; }
+            .table-row > div, .table-header > div { white-space: normal; line-height: 1.2; padding: 0 2px; }
+            
             div[data-testid="stMetricValue"] { font-size: 1.3rem !important; }
             div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; }
         }
@@ -185,6 +153,15 @@ if not st.session_state.authenticated:
                 st.session_state.display_name = selected_gm
                 st.rerun()
     st.stop()
+
+# --- SAFELY PROCESS DEEP LINKS ---
+if st.session_state.authenticated:
+    if "nav" in st.query_params and st.query_params.get("nav") == "team":
+        target_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
+        if target_gm in GM_ROSTER:
+            st.session_state.main_nav = "My Team"
+            st.session_state.sel_gm_val = target_gm
+        st.query_params.clear()
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -271,43 +248,33 @@ def get_all_historical_points(pids):
 def get_playoff_status_v7(): 
     elim, today = set(), []
     
-    # 1. APPLY MANUAL OVERRIDES (Failsafe)
     if 'MANUAL_ELIMINATED' in globals():
         for t in MANUAL_ELIMINATED:
             elim.add(str(t).strip().upper())
             
-    # 2. DYNAMIC NHL API HUNTER
     def _find_elim(node):
         if isinstance(node, dict):
-            # FORMAT A: 2026 API Structure
             if 'topSeedTeam' in node and 'bottomSeedTeam' in node:
                 try:
                     t1 = node['topSeedTeam'].get('abbrev', '')
                     t2 = node['bottomSeedTeam'].get('abbrev', '')
-                    w1 = int(node.get('topSeedWins', 0)) # Found at top level of series!
-                    w2 = int(node.get('bottomSeedWins', 0)) # Found at top level of series!
-                    
+                    w1 = int(node.get('topSeedWins', 0))
+                    w2 = int(node.get('bottomSeedWins', 0))
                     if w1 == 4 and t2: elim.add(str(t2).upper())
                     if w2 == 4 and t1: elim.add(str(t1).upper())
                 except Exception:
                     pass
-                    
-            # FORMAT B: Legacy/Alternate API Structure
             if 'matchupTeams' in node and isinstance(node['matchupTeams'], list) and len(node['matchupTeams']) == 2:
                 try:
                     m = node['matchupTeams']
                     t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev') or m[0].get('abbrev') or ""
                     t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev') or m[1].get('abbrev') or ""
-                    
                     w1 = int(m[0].get('seriesRecord', {}).get('wins', m[0].get('wins', 0)))
                     w2 = int(m[1].get('seriesRecord', {}).get('wins', m[1].get('wins', 0)))
-                    
                     if w1 == 4 and t2: elim.add(str(t2).upper())
                     if w2 == 4 and t1: elim.add(str(t1).upper())
                 except Exception:
                     pass
-                    
-            # Drill deeper
             for v in node.values():
                 _find_elim(v)
         elif isinstance(node, list):
@@ -325,7 +292,7 @@ def get_playoff_status_v7():
             res1 = requests.get(url, headers=HEADERS, timeout=5)
             if res1.status_code == 200:
                 _find_elim(res1.json())
-                break # Stop if successful
+                break 
         except Exception:
             continue 
             
@@ -417,29 +384,38 @@ if nav == "League":
     
     st.markdown(f"<div class='roast-container'>🏆 <b>{lb.iloc[0]['GM']}</b> leads by {int(lb.iloc[0]['Pts'] - lb.iloc[1]['Pts'])} points.</div>", unsafe_allow_html=True)
     
-    # NATIVE COLUMNS for the League Table
-    h_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-    h_labels = ["Rank", "Name", "GP", "Points", "G", "A", "Pts Yest", "Pts Back", "Remaining"]
-    for i, l in enumerate(h_labels):
-        css_hide = "hide-portrait" if i not in [0, 1, 3, 6] else ""
-        h_cols[i].markdown(f"<div class='header-text {'header-left' if i==1 else ''} {css_hide}'>{l}</div>", unsafe_allow_html=True)
+    st.markdown("""
+        <div class='table-header'>
+            <div class='l-rank'>Rank</div>
+            <div class='l-name header-left'>Name</div>
+            <div class='l-gp hide-portrait'>GP</div>
+            <div class='l-pts'>Points</div>
+            <div class='l-g hide-portrait'>G</div>
+            <div class='l-a hide-portrait'>A</div>
+            <div class='l-yest'>Pts Yest</div>
+            <div class='l-back hide-portrait'>Pts Back</div>
+            <div class='l-rem hide-portrait'>Remaining</div>
+        </div>
+    """, unsafe_allow_html=True)
     
+    html_rows = []
     for _, r in lb.iterrows():
-        b_cols = st.columns([0.5, 2.0, 0.6, 0.8, 0.6, 0.6, 1.2, 0.8, 1.4])
-        b_cols[0].markdown(f"<div class='cell-text'><b>{r['Rank']}</b></div>", unsafe_allow_html=True)
-        with b_cols[1]:
-            # WebSocket Button disguised as a Hyperlink
-            if st.button(r['GM'], key=f"nav_{r['GM']}"):
-                st.session_state.sel_gm_val = r['GM']
-                st.session_state.main_nav = "My Team"
-                st.rerun()
-        b_cols[2].markdown(f"<div class='cell-text hide-portrait'>{r['GP']}</div>", unsafe_allow_html=True)
-        b_cols[3].markdown(f"<div class='cell-text'><b>{int(r['Pts'])}</b></div>", unsafe_allow_html=True)
-        b_cols[4].markdown(f"<div class='cell-text hide-portrait'>{r['G']}</div>", unsafe_allow_html=True)
-        b_cols[5].markdown(f"<div class='cell-text hide-portrait'>{r['A']}</div>", unsafe_allow_html=True)
-        b_cols[6].markdown(f"<div class='cell-text'>{int(r['Pts_Yest'])}</div>", unsafe_allow_html=True)
-        b_cols[7].markdown(f"<div class='cell-text hide-portrait'>{r['Back']}</div>", unsafe_allow_html=True)
-        b_cols[8].markdown(f"<div class='cell-text hide-portrait'>{int(r['Rem'])}</div>", unsafe_allow_html=True)
+        gm_link = f"?nav=team&gm={urllib.parse.quote(r['GM'])}"
+        row_html = f"""
+        <div class='table-row'>
+            <div class='l-rank'><b>{r['Rank']}</b></div>
+            <div class='l-name cell-left'><a href='{gm_link}' target='_self' class='player-link' style='font-weight:600;'>{r['GM']}</a></div>
+            <div class='l-gp hide-portrait'>{r['GP']}</div>
+            <div class='l-pts'><b>{int(r['Pts'])}</b></div>
+            <div class='l-g hide-portrait'>{r['G']}</div>
+            <div class='l-a hide-portrait'>{r['A']}</div>
+            <div class='l-yest'>{int(r['Pts_Yest'])}</div>
+            <div class='l-back hide-portrait'>{r['Back']}</div>
+            <div class='l-rem hide-portrait'>{int(r['Rem'])}</div>
+        </div>
+        """
+        html_rows.append(row_html)
+    st.markdown("".join(html_rows), unsafe_allow_html=True)
 
 elif nav == "My Team":
     if not st.session_state.sel_gm_val or st.session_state.sel_gm_val not in gms:
@@ -478,7 +454,7 @@ elif nav == "My Team":
         my_df['Pts'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('pts', 0)).fillna(0).astype(int)
         my_df['G'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('g', 0)).fillna(0).astype(int)
         my_df['A'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('a', 0)).fillna(0).astype(int)
-        my_df['GP'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get(h_key, {}).get('gp', 0)).fillna(0).astype(int)
+        my_df['GP'] = my_df['Player_Id'].map(lambda x: points_data.get(x, {}).get('gp', 0)).fillna(0).astype(int)
 
     my_df = my_df.sort_values('Pts', ascending=False)
     
@@ -502,11 +478,7 @@ elif nav == "My Team":
         safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
         is_elim = safe_team in ELIMINATED
         t_cls = "eliminated" if is_elim else ""
-        
-        # We apply 'player-link' class always for base styling (color/font), 
-        # and then 'eliminated' handles the line-through.
-        l_cls = "player-link" 
-        
+        l_cls = "player-link"
         fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
         
         p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
@@ -603,10 +575,7 @@ elif nav == "All Rosters":
             safe_team = str(r['Team']).strip().upper() if pd.notna(r['Team']) else ""
             is_elim = safe_team in ELIMINATED
             t_cls = "eliminated" if is_elim else ""
-            
-            # Base link styling always applied
             l_cls = "player-link"
-            
             fire = " 🔥" if safe_team in PLAYING_TODAY and not is_elim else ""
             
             p_name = str(r['Player_Name']).strip() if pd.notna(r['Player_Name']) else "Unknown"
