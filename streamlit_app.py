@@ -10,19 +10,19 @@ import os
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
-# --- 1. SESSION MEMORY & URL CATCHER ---
+# --- 1. SESSION MEMORY & DEEP LINK PRESERVATION ---
 if 'main_nav' not in st.session_state: st.session_state.main_nav = 'League'
 if 'sel_gm_val' not in st.session_state: st.session_state.sel_gm_val = None
 if 'display_name' not in st.session_state: st.session_state.display_name = None
-if 'authenticated' not in st.session_state: st.session_state.authenticated = False
 
-# Catch the URL intent IMMEDIATELY, but do not clear it yet.
-if "nav" in st.query_params:
-    nav_param = st.query_params.get("nav")
-    # THE FIX: Map "team" exactly to the Segmented Control option "My Team"
-    if nav_param == "team":
-        st.session_state.pending_nav = "My Team" 
-        st.session_state.pending_gm = urllib.parse.unquote(st.query_params.get("gm", ""))
+# We read the URL immediately, but DO NOT clear it. This allows the deep link
+# to survive the background authentication process.
+url_nav = st.query_params.get("nav")
+url_gm = st.query_params.get("gm")
+
+if url_nav == "team" and url_gm:
+    st.session_state.main_nav = "My Team"
+    st.session_state.sel_gm_val = urllib.parse.unquote(url_gm)
 
 # --- 2. CONFIG & CSS ---
 st.set_page_config(layout="wide", page_title="Metler Playoff Pool", page_icon="🏒")
@@ -111,7 +111,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Top anchor for "Back to Top"
+# Top anchor
 st.markdown("<div id='top-of-page'></div>", unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager(key="cookie_manager")
@@ -121,48 +121,46 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0
 # --- 3. ROBUST AUTHENTICATION WITH LOADING GATE ---
 GM_ROSTER = ["Mike", "Rhys", "Big M", "Pete", "Torrie", "Jay", "Duncs", "Trakas", "Gardner", "Aaron"]
 
-# Fetch cookie safely
-auth_cookie = cookie_manager.get('user_identity_cookie')
+def check_auth():
+    if st.session_state.get('authenticated'): return True
+    
+    # Try native synchronous fetch (Instant on modern Streamlit)
+    if hasattr(st, 'context') and hasattr(st.context, 'cookies'):
+        if st.context.cookies.get('user_identity_cookie') in GM_ROSTER:
+            st.session_state.authenticated = True
+            st.session_state.display_name = st.context.cookies.get('user_identity_cookie')
+            return True
+            
+    return False
 
-if not st.session_state.authenticated:
+if not check_auth():
+    # Component Fallback Fetch
+    auth_cookie = cookie_manager.get('user_identity_cookie')
     if auth_cookie in GM_ROSTER:
         st.session_state.authenticated = True
         st.session_state.display_name = auth_cookie
-    else:
-        # Give the cookie manager 2 execution cycles (0.6 seconds) to load from the browser
-        if 'cookie_cycles' not in st.session_state:
-            st.session_state.cookie_cycles = 0
-            
-        if st.session_state.cookie_cycles < 2:
-            st.session_state.cookie_cycles += 1
+        st.rerun() # Refresh to clear any loading states
+        
+    if not st.session_state.get('authenticated'):
+        # Give the cookie manager 1 render cycle to talk to the browser before blocking the screen
+        if 'auth_wait' not in st.session_state:
+            st.session_state.auth_wait = True
             st.markdown("<br><br><h3 style='text-align:center; color:#0068c9;'>Loading roster... 🏒</h3>", unsafe_allow_html=True)
-            time.sleep(0.3)
-            st.rerun() 
-        else:
-            # Genuinely logged out. Show form.
-            c1, c2, c3 = st.columns([1, 2, 1])
-            with c2:
-                st.title("🏒 Metler Playoff Pool")
-                with st.form("login"):
-                    st.markdown("### Welcome! Who are you?")
-                    selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
-                    if st.form_submit_button("Enter Pool"):
-                        cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
-                        st.session_state.authenticated = True
-                        st.session_state.display_name = selected_gm
-                        st.rerun()
-            st.stop()
-
-# --- EXECUTE CAUGHT NAVIGATION (Only runs once fully logged in!) ---
-if st.session_state.get('pending_nav'):
-    st.session_state.main_nav = st.session_state.pending_nav
-    st.session_state.sel_gm_val = st.session_state.pending_gm
-    st.session_state.pending_nav = None
-    st.session_state.pending_gm = None
-    # Safely clear the URL now that we have executed the jump
-    if "nav" in st.query_params:
-        st.query_params.clear()
-    st.rerun()
+            st.stop() # Halts execution, but lets the frontend send the cookie!
+            
+        # If we reach here, the cookie manager checked and found nothing. Genuine logout.
+        c1, c2, c3 = st.columns([1, 2, 1])
+        with c2:
+            st.title("🏒 Metler Playoff Pool")
+            with st.form("login"):
+                st.markdown("### Welcome! Who are you?")
+                selected_gm = st.selectbox("Select your GM Profile", sorted(GM_ROSTER))
+                if st.form_submit_button("Enter Pool"):
+                    cookie_manager.set('user_identity_cookie', selected_gm, expires_at=datetime.datetime.now()+datetime.timedelta(days=3650), key="k2")
+                    st.session_state.authenticated = True
+                    st.session_state.display_name = selected_gm
+                    st.rerun()
+        st.stop()
 
 # --- 4. STRICT API FETCHING ---
 TEAM_URLS = {'ANA':'ducks','BOS':'bruins','BUF':'sabres','CGY':'flames','CAR':'hurricanes','CHI':'blackhawks','COL':'avalanche','CBJ':'bluejackets','DAL':'stars','DET':'redwings','EDM':'oilers','FLA':'panthers','LAK':'kings','MIN':'wild','MTL':'canadiens','NSH':'predators','NJD':'devils','NYI':'islanders','NYR':'rangers','OTT':'senators','PHI':'flyers','PIT':'penguins','SJS':'sharks','SEA':'kraken','STL':'blues','TBL':'lightning','TOR':'mapleleafs','UTA':'utah','VAN':'canucks','VGK':'goldenknights','WSH':'capitals','WPG':'jets'}
@@ -249,43 +247,52 @@ def get_all_historical_points(pids):
 def get_playoff_status():
     elim, today = set(), []
     
+    # Recursive Failsafe: Finds matchups no matter how deep the NHL hides them in the JSON
+    def _find_eliminations(data_node, elim_set):
+        if isinstance(data_node, dict):
+            if 'matchupTeams' in data_node and len(data_node['matchupTeams']) == 2:
+                m = data_node['matchupTeams']
+                try:
+                    t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
+                    t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
+                    w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
+                    w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
+                    if w1 == 4 and t2: elim_set.add(str(t2).upper())
+                    if w2 == 4 and t1: elim_set.add(str(t1).upper())
+                except Exception:
+                    pass
+            for v in data_node.values():
+                _find_eliminations(v, elim_set)
+        elif isinstance(data_node, list):
+            for item in data_node:
+                _find_eliminations(item, elim_set)
+
+    # Check both potential bracket URLs
     urls_to_try = [
-        "https://api-web.nhle.com/v1/playoff-bracket/2026",
-        "https://api-web.nhle.com/v1/playoff-bracket/20252026"
+        "https://api-web.nhle.com/v1/playoff-bracket/20252026",
+        "https://api-web.nhle.com/v1/playoff-bracket/2026"
     ]
     
     for url in urls_to_try:
         try:
             res1 = requests.get(url, headers=HEADERS, timeout=5)
             if res1.status_code == 200:
-                data = res1.json()
-                
-                series_list = data.get('series', [])
-                if not series_list:
-                    for r in data.get('rounds', []):
-                        series_list.extend(r.get('series', []))
-                        
-                for s in series_list:
-                    m = s.get('matchupTeams', [])
-                    if len(m) == 2:
-                        t1 = m[0].get('team', {}).get('abbrev') or m[0].get('teamAbbrev')
-                        t2 = m[1].get('team', {}).get('abbrev') or m[1].get('teamAbbrev')
-                        
-                        w1 = int(m[0].get('seriesRecord', {}).get('wins', 0))
-                        w2 = int(m[1].get('seriesRecord', {}).get('wins', 0))
-                        
-                        if w1 == 4 and t2: elim.add(t2.upper())
-                        if w2 == 4 and t1: elim.add(t1.upper())
+                _find_eliminations(res1.json(), elim)
                 break 
-        except:
+        except Exception:
             continue 
             
     try:
         res2 = requests.get("https://api-web.nhle.com/v1/schedule/now", headers=HEADERS, timeout=5)
-        res2.raise_for_status()
-        today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
-        today = [t['abbrev'] for d in res2.json().get('gameWeek', []) if d['date'] == today_str for g in d.get('games', []) for t in [g['awayTeam'], g['homeTeam']]]
-    except: pass
+        if res2.status_code == 200:
+            today_str = datetime.datetime.now(ET_ZONE).strftime("%Y-%m-%d")
+            for d in res2.json().get('gameWeek', []):
+                if d['date'] == today_str:
+                    for g in d.get('games', []):
+                        today.append(g['awayTeam']['abbrev'])
+                        today.append(g['homeTeam']['abbrev'])
+    except Exception:
+        pass
     
     return elim, today
 
@@ -345,6 +352,10 @@ st.divider()
 selected_nav = st.segmented_control("Nav", ["League", "My Team", "All Rosters"], default=st.session_state.main_nav, label_visibility="collapsed")
 
 if selected_nav and selected_nav != st.session_state.main_nav:
+    # Explicitly clear the URL only when the user interacts with the tabs
+    if "nav" in st.query_params:
+        st.query_params.clear()
+        
     st.session_state.main_nav = selected_nav
     if selected_nav == "My Team":
         st.session_state.sel_gm_val = st.session_state.display_name if st.session_state.display_name in gms else gms[0]
@@ -404,6 +415,8 @@ elif nav == "My Team":
     with c1: 
         curr = st.selectbox("Other Teams", gms, index=gms.index(st.session_state.sel_gm_val), key="dropdown")
         if curr != st.session_state.sel_gm_val:
+            if "nav" in st.query_params:
+                st.query_params.clear()
             st.session_state.sel_gm_val = curr
             st.rerun()
     with c2: horizon = st.selectbox("Stats Filter", ['All Time', 'Yesterday', 'Last 7 Days', 'Last 14 Days', 'Last 30 Days'], key="horiz1")
@@ -498,9 +511,8 @@ elif nav == "All Rosters":
     gm_totals = total_df.groupby('GM')['Pts'].sum().reset_index().sort_values('Pts', ascending=False)
     sorted_gms = gm_totals['GM'].tolist()
     
-    # Custom alphanumeric anchor generator
     def make_anchor(name):
-        return "gm-" + "".join([c for c in name if c.isalnum()]).lower()
+        return "".join([c for c in name if c.isalnum()]).lower()
 
     c_leg, c_jump = st.columns([1.5, 2.5])
     with c_leg:
@@ -512,7 +524,7 @@ elif nav == "All Rosters":
             </div>
         """, unsafe_allow_html=True)
     with c_jump:
-        # THE FIX: Pure HTML Anchor Tags using target="_self" to force smooth scrolling
+        st.write("") 
         anchor_html = " | ".join([f"<a href='#{make_anchor(g)}' target='_self' style='color:#0068c9; text-decoration:none; font-weight:bold;'>{g}</a>" for g in sorted_gms])
         st.markdown(f"<div style='text-align:right; margin-top: 5px;'><b>Jump to:</b> {anchor_html}</div>", unsafe_allow_html=True)
     
@@ -521,7 +533,6 @@ elif nav == "All Rosters":
     for g in sorted_gms:
         gm_pts = gm_totals.loc[gm_totals['GM'] == g, 'Pts'].iloc[0]
         
-        # Inject the invisible target div right above the subheader
         st.markdown(f"<div id='{make_anchor(g)}' style='position: relative; top: -50px;'></div>", unsafe_allow_html=True)
         
         hc1, hc2 = st.columns([8, 2])
